@@ -1,0 +1,4 @@
+{
+  "/api/auth/refresh/route": "app/api/auth/refresh/route.js",
+  "/api/admin/riders/live-locations/route": "app/api/admin/riders/live-locations/route.js"
+}

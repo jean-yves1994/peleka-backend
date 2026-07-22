@@ -1,0 +1,31 @@
+{
+  "name": "peleka-backend",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Peleka Courier System – Backend API (Next.js + PostgreSQL)",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "migrate": "node scripts/migrate.js up",
+    "seed": "node scripts/seed.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "glob": "^13.0.6",
+    "jsonwebtoken": "^9.0.2",
+    "maplibre-gl": "^5.24.0",
+    "next": "^14.2.35",
+    "pg": "^8.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "rimraf": "^6.1.3",
+    "tar": "^7.5.20",
+    "uuid": "^14.0.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
