@@ -110,7 +110,7 @@ exports.POST = withHandler(async (request) => {
 
   return created({ shipment, quote });
 });
-
+//This blocks riders from seeing shipments that are pending payment, since they can't be assigned yet. Admins can see them, but they can't assign them either until payment is confirmed.
 exports.GET = withHandler(async (request) => {
   const user = await requireAuth(request);
   const { page, pageSize, offset, sortCol, sortDir } = parseListParams(request);
