@@ -1,6 +1,1 @@
-{
-  "/api/payments/paypack/initiate/route": "app/api/payments/paypack/initiate/route.js",
-  "/api/payments/[id]/route": "app/api/payments/[id]/route.js",
-  "/api/payments/paypack/webhook/route": "app/api/payments/paypack/webhook/route.js",
-  "/api/auth/refresh/route": "app/api/auth/refresh/route.js"
-}
+{}
