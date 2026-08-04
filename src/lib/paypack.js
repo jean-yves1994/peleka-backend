@@ -1,28 +1,40 @@
 /**
  * Paypack helper — server-side only.
  *
- * Paypack is a Rwandan payment platform supporting MTN Mobile Money,
- * Airtel Money and Tigo Cash. It uses a "Request to Pay" model: we push a
- * charge request to the customer's phone, they approve with their MoMo PIN,
- * and Paypack notifies us via webhook.
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE FIX (verified against your live account via /api/admin/paypack-probe)
  *
- * VERIFIED against https://docs.paypack.rw :
- *   Base URL      https://payments.paypack.rw/api
- *   Authorize     POST ${BASE}/auth/agents/authorize   { client_id, client_secret }
- *                 → { access, refresh, expires }       (access lasts ~15 min)
- *   Refresh       GET  ${BASE}/auth/agents/refresh/{refresh_token}
- *   Cashin        POST ${BASE}/transactions/cashin      { amount:number, number:string }
- *                 → { amount, created_at, kind:"CASHIN", ref, status:"pending" }
- *   Find tx       GET  ${BASE}/transactions/find/{ref}
- *   Idempotency   `Idempotency-Key` header, max 32 chars (optional)
- *   Webhook mode  `X-Webhook-Mode` header ("development" | "production")
+ * `/transactions/find/{ref}` returns HTTP 200 and the transaction — but the
+ * response has NO `status` field:
  *
- * Env (see .env.additions):
+ *   { ref, amount, fee, kind, provider, client, metadata, merchant, timestamp }
+ *
+ * The old findTransaction() read `d.status`, got `undefined`, and
+ * normalizeStatus() fell through to 'pending'. So every lookup reported
+ * "pending" for payments that had actually succeeded — no error, no 404,
+ * nothing in the logs. That is why confirmed payments never marked shipments
+ * as paid.
+ *
+ * The status lives in the EVENTS feed instead:
+ *
+ *   GET /events/transactions?ref={ref}
+ *   → { ref, limit, total, transactions: [
+ *         { event_kind: "transaction:processed",
+ *           data: { ref, status: "successful", amount, ... } },
+ *         { event_kind: "transaction:created",
+ *           data: { ref, status: "pending", amount, ... } }
+ *       ] }
+ *
+ * findTransaction() now reads the events feed and falls back to
+ * /transactions/find/{ref} only to confirm existence.
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Env:
  *   PAYPACK_CLIENT_ID
  *   PAYPACK_CLIENT_SECRET
- *   PAYPACK_WEBHOOK_SECRET      used to verify the HMAC-SHA256 signature
- *   PAYPACK_ENV                 'development' | 'production' (default: development)
- *   PAYPACK_BASE_URL            optional override
+ *   PAYPACK_WEBHOOK_SECRET
+ *   PAYPACK_ENV           'development' | 'production'
+ *   PAYPACK_BASE_URL      optional override
  */
 const crypto = require('crypto');
 const { AppError, BadRequestError } = require('./errors');
@@ -45,18 +57,16 @@ function assertConfigured() {
 }
 
 // ---------- token cache ----------
-// Access tokens last ~15 minutes. Cache and refresh slightly early. A single
-// in-flight promise prevents a thundering herd of authorize calls.
+// Access tokens are short-lived. Cache and refresh slightly early; a single
+// in-flight promise prevents a burst of concurrent authorize calls.
 let _access = null;
 let _refresh = null;
-let _expiresAt = 0; // epoch ms
+let _expiresAt = 0;
 let _inflight = null;
 
 function setTokens(json) {
   _access = json.access || null;
   _refresh = json.refresh || null;
-  // `expires` may be seconds-from-now or an absolute value depending on
-  // account; treat small numbers as a TTL and fall back to 14 minutes.
   const raw = Number(json.expires);
   const ttlSec = Number.isFinite(raw) && raw > 0 && raw < 86400 ? raw : 840;
   _expiresAt = Date.now() + ttlSec * 1000;
@@ -109,7 +119,6 @@ async function authedFetch(path, { method = 'GET', body, idempotencyKey } = {}) 
     Accept: 'application/json',
     'X-Webhook-Mode': WEBHOOK_MODE,
   };
-  // Paypack caps the key at 32 characters.
   if (idempotencyKey) headers['Idempotency-Key'] = String(idempotencyKey).slice(0, 32);
 
   let res = await fetch(`${BASE}${path}`, {
@@ -177,29 +186,64 @@ async function cashin({ amount, phone, idempotencyKey }) {
   }
   return {
     ref: json.ref,
-    status: String(json.status || 'pending').toLowerCase(),
+    status: normalizeStatus(json.status),
     amount: Number(json.amount ?? amt),
     raw: json,
   };
 }
 
 /**
- * Look up a transaction by its Paypack ref.
- * Normalises status to: 'successful' | 'failed' | 'pending'
+ * Look up a transaction and determine whether it succeeded.
+ *
+ * Reads the EVENTS feed, because that is the only place Paypack exposes a
+ * status. `/transactions/find/{ref}` confirms a transaction exists and gives
+ * the amount, but carries no status at all.
+ *
+ * @returns {Promise<{status:'successful'|'failed'|'pending',amount:number,ref:string,raw:object}>}
  */
 async function findTransaction(ref) {
   assertConfigured();
-  const { res, json } = await authedFetch(`/transactions/find/${encodeURIComponent(ref)}`);
-  if (!res.ok) {
-    throw new BadRequestError('Verify failed: ' + (json.message || `HTTP ${res.status}`));
+  const encoded = encodeURIComponent(ref);
+
+  // 1) Events feed — carries the status.
+  const ev = await authedFetch(`/events/transactions?ref=${encoded}`);
+  const events = Array.isArray(ev.json?.transactions) ? ev.json.transactions : [];
+
+  if (ev.res.ok && events.length) {
+    // A terminal 'processed' event is authoritative. Otherwise take the most
+    // recent event. Don't rely on the array's ordering — sort explicitly.
+    const sorted = [...events].sort(
+      (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0),
+    );
+    const processed = sorted.find((e) =>
+      String(e.event_kind || '').toLowerCase().includes('processed'),
+    );
+    const chosen = processed || sorted[0];
+    const d = chosen.data || {};
+
+    return {
+      status: normalizeStatus(d.status),
+      amount: Number(d.amount ?? 0),
+      ref: d.ref || ref,
+      raw: { event_kind: chosen.event_kind, ...d },
+    };
   }
-  const d = json?.data || json || {};
-  return {
-    status: normalizeStatus(d.status),
-    amount: Number(d.amount ?? 0),
-    ref: d.ref || ref,
-    raw: d,
-  };
+
+  // 2) No events yet — confirm the transaction exists at all. This endpoint
+  //    has no status field, so anything found here is still in flight.
+  const found = await authedFetch(`/transactions/find/${encoded}`);
+  if (found.res.ok && found.json?.ref) {
+    return {
+      status: 'pending',
+      amount: Number(found.json.amount ?? 0),
+      ref: found.json.ref,
+      raw: found.json,
+    };
+  }
+
+  throw new BadRequestError(
+    `Transaction ${ref} not found (events HTTP ${ev.res.status}, find HTTP ${found.res.status})`,
+  );
 }
 
 function normalizeStatus(s) {
@@ -207,19 +251,21 @@ function normalizeStatus(s) {
   if (['successful', 'success', 'succeeded', 'completed', 'processed'].includes(v)) {
     return 'successful';
   }
-  if (['failed', 'failure', 'cancelled', 'canceled', 'rejected'].includes(v)) return 'failed';
+  if (['failed', 'failure', 'cancelled', 'canceled', 'rejected', 'expired'].includes(v)) {
+    return 'failed';
+  }
   return 'pending';
 }
 
 /**
  * Verify a webhook's HMAC-SHA256 signature.
  *
- * Paypack signs the raw request body with your webhook secret and sends the
- * digest in a signature header. Header naming has varied, so we accept the
- * common variants and compare both hex and base64 digests in constant time.
+ * Paypack signs the raw request body with your webhook secret. Header naming
+ * has varied, so accept the common variants and compare both hex and base64
+ * digests in constant time.
  *
  * @param {string} rawBody  the EXACT raw request body string
- * @param {Headers} headers  the request headers
+ * @param {Headers} headers
  */
 function verifyWebhookSignature(rawBody, headers) {
   if (!WEBHOOK_SECRET) return false;
@@ -230,8 +276,10 @@ function verifyWebhookSignature(rawBody, headers) {
     headers.get('signature');
   if (!provided) return false;
 
-  const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET).update(rawBody || '', 'utf8');
-  const hex = hmac.digest('hex');
+  const hex = crypto
+    .createHmac('sha256', WEBHOOK_SECRET)
+    .update(rawBody || '', 'utf8')
+    .digest('hex');
   const b64 = crypto
     .createHmac('sha256', WEBHOOK_SECRET)
     .update(rawBody || '', 'utf8')
@@ -249,7 +297,7 @@ function safeEqual(a, b) {
 }
 
 module.exports = {
-  getAccessToken, // exported for the probe / health check
+  getAccessToken,
   cashin,
   findTransaction,
   verifyWebhookSignature,
