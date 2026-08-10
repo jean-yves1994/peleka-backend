@@ -10,23 +10,18 @@ const { logAudit } = require('@/lib/audit');
 /**
  * Admin pricing configs.
  *
- * CHANGED: adds `moto_commission_percentage` — the motorbike owner's share of
- * the fare, alongside the rider's.
+ * CHANGED: adds `moto_commission_percentage` — the motorbike owner's share.
  *
- *     rider_commission_percentage   70   → the person doing the delivery
+ *     rider_commission_percentage   70   → the person making the delivery
  *     moto_commission_percentage    ??   → whoever owns the motorbike
  *     Peleka                      rest   → 100 − rider − moto
- *
- * Both are the share that party RECEIVES, consistent with your existing
- * rider_commission_percentage default of 70.
  *
  * Two edits from your original: the extra column in the INSERT, and a check
  * that the two shares don't exceed 100. Everything else is untouched.
  *
  * ⚠️ ALSO EDIT `pricingConfigSchema` in @/lib/validation — see VALIDATION.md.
- *    Zod strips unknown keys by default, so without that change
- *    `moto_commission_percentage` is silently dropped before it reaches here
- *    and every config saves with 0.
+ *    Zod strips unknown keys by default, so without that change the field is
+ *    dropped before it reaches here and every config saves 0.
  */
 
 exports.dynamic = 'force-dynamic';
@@ -35,8 +30,8 @@ exports.POST = withHandler(async (request) => {
   const admin = await requireRole(request, ['admin']);
   const body = pricingConfigSchema.parse(await readJson(request));
 
-  // Belt-and-braces alongside the DB CHECK constraint: catching it here gives a
-  // message naming both numbers, rather than a raw constraint violation.
+  // Belt-and-braces alongside the DB CHECK: catching it here gives a message
+  // naming both numbers rather than a raw constraint violation.
   const riderPct = Number(body.rider_commission_percentage ?? 70);
   const motoPct = Number(body.moto_commission_percentage ?? 0);
   if (riderPct + motoPct > 100) {

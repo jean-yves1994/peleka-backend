@@ -37,6 +37,46 @@ function computeDiscount(subtotal, discount) {
     : Number(discount.amount);
   return Math.min(subtotal, Math.max(0, round2(raw)));
 }
+
+/**
+ * Split the net fare three ways: rider, motorbike owner, Peleka.
+ *
+ * Riders in Kigali frequently ride a bike they don't own, so the fare splits
+ * three ways rather than two.
+ *
+ * The base is `afterDiscount` — the PRE-TAX amount — matching how
+ * rider_earnings was already calculated here. VAT belongs to RRA and isn't
+ * anyone's commission to share.
+ *
+ * Peleka takes the REMAINDER rather than its own rounded percentage. Three
+ * independent roundings can otherwise miss the net by a franc, and payouts
+ * stop reconciling against what was collected.
+ *
+ * Guarded so a bad config can't hand out more than came in: if the two
+ * percentages exceed 100 (the DB CHECK should prevent it, but a config created
+ * before that constraint existed wouldn't be caught), the motorbike share is
+ * capped and Peleka lands at zero rather than negative.
+ */
+function splitEarnings(afterDiscount, config) {
+  const riderPct = Math.max(0, Number(config.rider_commission_percentage) || 0);
+  const rawMotoPct = Math.max(0, Number(config.moto_commission_percentage) || 0);
+
+  // Never promise out more than the net fare.
+  const motoPct = Math.min(rawMotoPct, Math.max(0, 100 - riderPct));
+
+  const rider_earnings = round2(afterDiscount * (riderPct / 100));
+  const moto_earnings = round2(afterDiscount * (motoPct / 100));
+  const platform_earnings = round2(afterDiscount - rider_earnings - moto_earnings);
+
+  return {
+    rider_earnings,
+    moto_earnings,
+    platform_earnings,
+    rider_commission_percentage: riderPct,
+    moto_commission_percentage: motoPct,
+  };
+}
+
 async function quoteShipment(args) {
   const config = await getActivePricingConfig();
   const route = await findRouteOverride(args.pickup_city, args.delivery_city);
@@ -69,7 +109,9 @@ async function quoteShipment(args) {
   const afterDiscount = round2(subtotal - discount_amount);
   const tax_amount = round2(afterDiscount * (Number(config.tax_percentage) / 100));
   const total_price = round2(afterDiscount + tax_amount);
-  const rider_earnings = round2(afterDiscount * (Number(config.rider_commission_percentage) / 100));
+
+  // Three-way split of the pre-tax net.
+  const earnings = splitEarnings(afterDiscount, config);
 
   return {
     currency, pricing_config_id: config.id,
@@ -77,8 +119,21 @@ async function quoteShipment(args) {
     surge_multiplier: Number(config.surge_multiplier),
     base_fare, distance_fee, weight_fee, time_fee, subtotal,
     discount_code: discount?.code || null, discount_amount,
-    tax_amount, total_price, rider_earnings,
+    tax_amount, total_price,
+
+    // rider_earnings is unchanged in both name and value — nothing that reads
+    // it today needs to know about the rest.
+    rider_earnings: earnings.rider_earnings,
+    moto_earnings: earnings.moto_earnings,
+    platform_earnings: earnings.platform_earnings,
+
+    // The rates actually applied, so the caller can freeze them onto the
+    // shipment. Changing the config later must not rewrite what a rider or a
+    // bike owner was already owed.
+    rider_commission_percentage: earnings.rider_commission_percentage,
+    moto_commission_percentage: earnings.moto_commission_percentage,
+
     breakdown_note: route ? 'Flat route pricing applied' : 'Standard distance-based pricing',
   };
 }
-module.exports = { quoteShipment, getActivePricingConfig, loadDiscount };
+module.exports = { quoteShipment, getActivePricingConfig, loadDiscount, splitEarnings };
