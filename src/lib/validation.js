@@ -1,49 +1,69 @@
 /**
  * Zod schemas for request-body validation.
  */
-const { z } = require('zod');
+const { z } = require("zod");
 
-const email    = z.string().trim().toLowerCase().email().max(160);
-const phone    = z.string().trim().min(6).max(32).regex(/^\+?[0-9\s\-()]+$/, 'Invalid phone');
-const password = z.string().min(8).max(128)
-  .refine(v => /[A-Za-z]/.test(v) && /[0-9]/.test(v),
-          'Password must contain at least one letter and one number');
+const email = z.string().trim().toLowerCase().email().max(160);
+const phone = z
+  .string()
+  .trim()
+  .min(6)
+  .max(32)
+  .regex(/^\+?[0-9\s\-()]+$/, "Invalid phone");
+const password = z
+  .string()
+  .min(8)
+  .max(128)
+  .refine(
+    (v) => /[A-Za-z]/.test(v) && /[0-9]/.test(v),
+    "Password must contain at least one letter and one number",
+  );
 const lat = z.number().min(-90).max(90);
 const lng = z.number().min(-180).max(180);
 const uuid = z.string().uuid();
 
 // --- Auth ---
 // Accepts EITHER email OR phone (at least one required).
-const registerCustomerSchema = z.object({
-  email: email.optional(),
-  phone: phone.optional(),
-  password,
-  full_name: z.string().trim().min(2).max(160),
-}).refine(v => !!(v.email || v.phone), {
-  message: 'Either email or phone is required',
-  path: ['email'],
-});
+const registerCustomerSchema = z
+  .object({
+    email: email.optional(),
+    phone: phone.optional(),
+    password,
+    full_name: z.string().trim().min(2).max(160),
+  })
+  .refine((v) => !!(v.email || v.phone), {
+    message: "Either email or phone is required",
+    path: ["email"],
+  });
 
-const loginSchema = z.object({
-  email: email.optional(),
-  phone: phone.optional(),
-  password: z.string().min(1),
-}).refine(v => !!(v.email || v.phone), {
-  message: 'Either email or phone is required',
-  path: ['email'],
-});
+const loginSchema = z
+  .object({
+    email: email.optional(),
+    phone: phone.optional(),
+    password: z.string().min(1),
+  })
+  .refine((v) => !!(v.email || v.phone), {
+    message: "Either email or phone is required",
+    path: ["email"],
+  });
 
-const refreshSchema        = z.object({ refresh_token: z.string().min(20) });
+const refreshSchema = z.object({ refresh_token: z.string().min(20) });
 const forgotPasswordSchema = z.object({ email });
-const resetPasswordSchema  = z.object({ token: z.string().min(20), password });
-const changePasswordSchema = z.object({ current_password: z.string().min(1), new_password: password });
+const resetPasswordSchema = z.object({ token: z.string().min(20), password });
+const changePasswordSchema = z.object({
+  current_password: z.string().min(1),
+  new_password: password,
+});
 
 // Google Sign-In & OTP (v2)
 const googleAuthSchema = z.object({ id_token: z.string().min(20) });
-const otpSendSchema    = z.object({ phone, purpose: z.enum(['login','signup','verify']).default('login') });
-const otpVerifySchema  = z.object({
+const otpSendSchema = z.object({
   phone,
-  code: z.string().regex(/^\d{4,8}$/, 'Code must be 4-8 digits'),
+  purpose: z.enum(["login", "signup", "verify"]).default("login"),
+});
+const otpVerifySchema = z.object({
+  phone,
+  code: z.string().regex(/^\d{4,8}$/, "Code must be 4-8 digits"),
   full_name: z.string().trim().min(2).max(160).optional(),
 });
 
@@ -58,25 +78,38 @@ const updateProfileSchema = z.object({
 
 // --- Rider ---
 const createRiderSchema = z.object({
-  email, password, full_name: z.string().trim().min(2).max(160), phone,
-  vehicle_type: z.string().min(2).max(40).default('motorcycle'),
+  email,
+  password,
+  full_name: z.string().trim().min(2).max(160),
+  phone,
+  vehicle_type: z.string().min(2).max(40).default("motorcycle"),
   vehicle_plate: z.string().max(32).optional(),
   license_number: z.string().max(64).optional(),
   national_id: z.string().max(64).optional(),
 });
 const updateRiderStatusSchema = z.object({
-  status: z.enum(['pending_approval','approved','suspended','offline','online','busy']),
+  status: z.enum([
+    "pending_approval",
+    "approved",
+    "suspended",
+    "offline",
+    "online",
+    "busy",
+  ]),
 });
 const riderLocationSchema = z.object({
-  lat, lng,
+  lat,
+  lng,
   heading: z.number().min(0).max(360).optional(),
   speed_kph: z.number().min(0).max(500).optional(),
 });
 
 // --- Shipment ---
 const quoteShipmentSchema = z.object({
-  pickup_lat: lat, pickup_lng: lng,
-  delivery_lat: lat, delivery_lng: lng,
+  pickup_lat: lat,
+  pickup_lng: lng,
+  delivery_lat: lat,
+  delivery_lng: lng,
   parcel_weight_kg: z.number().min(0).max(2000).default(1),
   pickup_city: z.string().max(120).optional(),
   delivery_city: z.string().max(120).optional(),
@@ -91,12 +124,14 @@ const createShipmentSchema = z.object({
   recipient_email: email.optional(),
   pickup_address: z.string().trim().min(3).max(500),
   pickup_city: z.string().max(120).optional(),
-  pickup_lat: lat, pickup_lng: lng,
+  pickup_lat: lat,
+  pickup_lng: lng,
   pickup_notes: z.string().max(1000).optional(),
   pickup_scheduled_at: z.string().datetime().optional(),
   delivery_address: z.string().trim().min(3).max(500),
   delivery_city: z.string().max(120).optional(),
-  delivery_lat: lat, delivery_lng: lng,
+  delivery_lat: lat,
+  delivery_lng: lng,
   delivery_notes: z.string().max(1000).optional(),
   delivery_scheduled_at: z.string().datetime().optional(),
   requires_signature: z.boolean().optional().default(false),
@@ -115,19 +150,40 @@ const assignShipmentSchema = z.object({
   expires_in_minutes: z.number().int().min(1).max(1440).optional(),
 });
 const shipmentStatusUpdateSchema = z.object({
-  status: z.enum(['rider_en_route_to_pickup','picked_up','in_transit','out_for_delivery',
-    'delivered','failed_pickup','failed_delivery','returned','cancelled']),
+  status: z.enum([
+    "rider_en_route_to_pickup",
+    "picked_up",
+    "in_transit",
+    "out_for_delivery",
+    "delivered",
+    "failed_pickup",
+    "failed_delivery",
+    "returned",
+    "cancelled",
+  ]),
   note: z.string().max(500).optional(),
-  lat: lat.optional(), lng: lng.optional(),
+  lat: lat.optional(),
+  lng: lng.optional(),
 });
-const cancelShipmentSchema     = z.object({ reason: z.string().trim().min(2).max(500) });
-const assignmentResponseSchema = z.object({ reject_reason: z.string().max(300).optional() });
+const cancelShipmentSchema = z.object({
+  reason: z.string().trim().min(2).max(500),
+});
+const assignmentResponseSchema = z.object({
+  reject_reason: z.string().max(300).optional(),
+});
 const uploadProofSchema = z.object({
-  kind: z.enum(['pickup_photo','delivery_photo','signature','id_photo','other']),
+  kind: z.enum([
+    "pickup_photo",
+    "delivery_photo",
+    "signature",
+    "id_photo",
+    "other",
+  ]),
   file_url: z.string().url(),
   mime_type: z.string().max(80).optional(),
   file_size: z.number().int().min(0).optional(),
-  lat: lat.optional(), lng: lng.optional(),
+  lat: lat.optional(),
+  lng: lng.optional(),
 });
 const rateShipmentSchema = z.object({
   score: z.number().int().min(1).max(5),
@@ -137,7 +193,7 @@ const rateShipmentSchema = z.object({
 // --- Pricing ---
 const pricingConfigSchema = z.object({
   name: z.string().min(2).max(120),
-  currency: z.string().min(3).max(8).default('USD'),
+  currency: z.string().min(3).max(8).default("USD"),
   base_fare: z.number().min(0),
   price_per_km: z.number().min(0),
   price_per_kg: z.number().min(0).default(0),
@@ -147,13 +203,14 @@ const pricingConfigSchema = z.object({
   free_km: z.number().min(0).default(0),
   surge_multiplier: z.number().min(0.1).max(10).default(1),
   tax_percentage: z.number().min(0).max(100).default(0),
-  rider_commission_percentage: z.number().min(0).max(100).default(70),
+  rider_commission_percentage: z.number().min(0).max(100).default(30),
+  moto_commission_percentage: z.number().min(0).max(100).default(40),
   is_active: z.boolean().optional(),
 });
 const discountSchema = z.object({
   code: z.string().min(2).max(60),
   description: z.string().max(500).optional(),
-  discount_type: z.enum(['percent','fixed']),
+  discount_type: z.enum(["percent", "fixed"]),
   amount: z.number().min(0),
   max_uses: z.number().int().min(1).optional(),
   valid_from: z.string().datetime().optional(),
@@ -164,41 +221,81 @@ const discountSchema = z.object({
 // --- Payment ---
 const createPaymentSchema = z.object({
   shipment_id: uuid,
-  method: z.enum(['cash','card','mobile_money','wallet','bank_transfer']),
+  method: z.enum(["cash", "card", "mobile_money", "wallet", "bank_transfer"]),
   provider: z.string().max(60).optional(),
   provider_ref: z.string().max(160).optional(),
 });
 const updatePaymentStatusSchema = z.object({
-  status: z.enum(['pending','authorized','paid','failed','refunded','cancelled']),
+  status: z.enum([
+    "pending",
+    "authorized",
+    "paid",
+    "failed",
+    "refunded",
+    "cancelled",
+  ]),
   provider_ref: z.string().max(160).optional(),
   failure_reason: z.string().max(500).optional(),
 });
 
 // --- Device tokens ---
 const deviceTokenSchema = z.object({
-  platform: z.enum(['ios','android','web']),
+  platform: z.enum(["ios", "android", "web"]),
   token: z.string().min(10).max(500),
 });
 
 // --- Complaints (v2 — 'lost' + attachments) ---
 const complaintSchema = z.object({
   shipment_id: uuid.optional(),
-  category: z.enum(['failed_pickup','failed_delivery','damage','delay','lost','other']),
+  category: z.enum([
+    "failed_pickup",
+    "failed_delivery",
+    "damage",
+    "delay",
+    "lost",
+    "other",
+  ]),
   subject: z.string().trim().min(2).max(200),
   description: z.string().trim().min(2).max(3000),
-  attachments: z.array(z.object({
-    url: z.string().url(),
-    mime_type: z.string().max(80).optional(),
-    size: z.number().int().min(0).optional(),
-  })).max(10).optional().default([]),
+  attachments: z
+    .array(
+      z.object({
+        url: z.string().url(),
+        mime_type: z.string().max(80).optional(),
+        size: z.number().int().min(0).optional(),
+      }),
+    )
+    .max(10)
+    .optional()
+    .default([]),
 });
 
 module.exports = {
-  registerCustomerSchema, loginSchema, refreshSchema, forgotPasswordSchema, resetPasswordSchema,
-  changePasswordSchema, googleAuthSchema, otpSendSchema, otpVerifySchema, updateProfileSchema,
-  createRiderSchema, updateRiderStatusSchema, riderLocationSchema,
-  quoteShipmentSchema, createShipmentSchema, assignShipmentSchema, shipmentStatusUpdateSchema,
-  cancelShipmentSchema, assignmentResponseSchema, uploadProofSchema, rateShipmentSchema,
-  pricingConfigSchema, discountSchema, createPaymentSchema, updatePaymentStatusSchema,
-  deviceTokenSchema, complaintSchema,
+  registerCustomerSchema,
+  loginSchema,
+  refreshSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  changePasswordSchema,
+  googleAuthSchema,
+  otpSendSchema,
+  otpVerifySchema,
+  updateProfileSchema,
+  createRiderSchema,
+  updateRiderStatusSchema,
+  riderLocationSchema,
+  quoteShipmentSchema,
+  createShipmentSchema,
+  assignShipmentSchema,
+  shipmentStatusUpdateSchema,
+  cancelShipmentSchema,
+  assignmentResponseSchema,
+  uploadProofSchema,
+  rateShipmentSchema,
+  pricingConfigSchema,
+  discountSchema,
+  createPaymentSchema,
+  updatePaymentStatusSchema,
+  deviceTokenSchema,
+  complaintSchema,
 };
