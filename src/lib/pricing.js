@@ -1,6 +1,6 @@
 const { query } = require('./db');
 const { NotFoundError, BadRequestError } = require('./errors');
-const { getDistanceMatrix } = require('./distance');
+const { roadDistance } = require('./distance');
 
 async function getActivePricingConfig() {
   const { rows } = await query(`SELECT * FROM pricing_configs WHERE is_active = TRUE ORDER BY updated_at DESC LIMIT 1`);
@@ -98,10 +98,14 @@ async function quoteShipment(args) {
   const config = await getActivePricingConfig();
   const route = await findRouteOverride(args.pickup_city, args.delivery_city);
   const discount = await loadDiscount(args.discount_code);
-  const dm = await getDistanceMatrix(
-    { lat: args.pickup_lat, lng: args.pickup_lng },
-    { lat: args.delivery_lat, lng: args.delivery_lng }
+  const dmRaw = await roadDistance(
+    args.pickup_lat, args.pickup_lng, args.delivery_lat, args.delivery_lng
   );
+  const dm = {
+    distance_km: dmRaw.km,
+    duration_minutes: dmRaw.minutes,
+    source: dmRaw.source,
+  };
 
   const currency = route?.currency || config.currency;
   let base_fare = 0, distance_fee = 0, time_fee = 0, subtotal = 0;
@@ -115,8 +119,7 @@ async function quoteShipment(args) {
     base_fare = subtotal;
   } else {
     base_fare = round2(Number(config.base_fare));
-    const billableKm = Math.max(0, dm.distance_km - Number(config.free_km || 0));
-    distance_fee = round2(billableKm * Number(config.price_per_km));
+    distance_fee = round2(dm.distance_km * Number(config.price_per_km));
     time_fee = round2(dm.duration_minutes * Number(config.price_per_minute || 0));
 
     let raw = base_fare + distance_fee + time_fee;

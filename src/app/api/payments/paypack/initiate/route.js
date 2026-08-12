@@ -30,7 +30,8 @@ exports.POST = withHandler(async (request) => {
 
   const { rows } = await query(
     `SELECT s.*, cu.email AS customer_email, cu.phone AS customer_phone,
-            cu.full_name AS customer_name
+            cu.full_name AS customer_name, cu.customer_type, cu.contract_customer,
+            cu.outstanding_balance
        FROM shipments s
        JOIN users cu ON cu.id = s.customer_id
       WHERE s.id = $1`,
@@ -44,8 +45,15 @@ exports.POST = withHandler(async (request) => {
   if (!isOwner && !isAdmin) throw new ForbiddenError();
 
   if (s.status === 'cancelled') throw new ConflictError('Shipment is cancelled');
-  if (['delivered', 'in_transit', 'out_for_delivery', 'picked_up'].includes(s.status)) {
+
+  const isPremier = s.customer_type === 'premier' || s.contract_customer === true;
+  if (!isPremier && ['delivered', 'in_transit', 'out_for_delivery', 'picked_up'].includes(s.status)) {
     throw new ConflictError('Shipment is already in progress');
+  }
+  if (isPremier && s.status !== 'delivered' && ['in_transit', 'out_for_delivery', 'picked_up', 'rider_en_route_to_pickup'].includes(s.status)) {
+    // Premier customers may settle before or after delivery, but a live job
+    // should not be interrupted by a second payment attempt.
+    throw new ConflictError('This Premier shipment can be paid after delivery or once it is no longer in progress');
   }
 
   const paid = await query(

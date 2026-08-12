@@ -15,6 +15,7 @@ exports.GET = withHandler(async (request) => {
   const listParams = [...params, pageSize, offset];
   const { rows } = await query(
     `SELECT u.id, u.email, u.phone, u.full_name, u.status, u.created_at, u.last_login_at,
+            u.customer_type, u.contract_customer, u.credit_limit, u.outstanding_balance,
             cp.wallet_balance,
             (SELECT COUNT(*)::int FROM shipments s WHERE s.customer_id=u.id) AS shipment_count
        FROM users u LEFT JOIN customer_profiles cp ON cp.user_id=u.id

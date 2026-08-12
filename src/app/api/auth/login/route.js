@@ -27,7 +27,8 @@ exports.POST = withHandler(async (request) => {
   const phone = body.phone ? normalizePhone(body.phone) : null;
 
   const { rows } = await query(
-    `SELECT id, email, phone, full_name, role, status, password_hash
+    `SELECT id, email, phone, full_name, role, status, customer_type,
+              contract_customer, credit_limit, outstanding_balance, password_hash
        FROM users
       WHERE (($1::citext IS NOT NULL AND email = $1) OR ($2::text IS NOT NULL AND phone = $2))
         AND deleted_at IS NULL LIMIT 1`,

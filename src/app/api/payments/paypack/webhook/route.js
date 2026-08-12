@@ -76,7 +76,13 @@ exports.POST = async (request) => {
         );
         await client.query(
           `UPDATE shipments SET status='awaiting_assignment'
-            WHERE id=$1 AND status IN ('pending_payment','draft')`,
+            WHERE id=$1 AND status IN ('pending_payment','draft')
+              AND EXISTS (
+                SELECT 1 FROM users cu
+                 WHERE cu.id=shipments.customer_id
+                   AND cu.customer_type <> 'premier'
+                   AND cu.contract_customer = FALSE
+              )`,
           [payment.shipment_id],
         );
         await client.query(
@@ -84,8 +90,28 @@ exports.POST = async (request) => {
              (shipment_id, from_status, to_status, changed_by, note)
            SELECT id, 'pending_payment', 'awaiting_assignment', NULL,
                   'Payment received (Paypack Mobile Money)'
-             FROM shipments WHERE id=$1 AND status='awaiting_assignment'`,
+             FROM shipments s
+            WHERE s.id=$1
+              AND s.status='awaiting_assignment'
+              AND EXISTS (
+                SELECT 1 FROM users cu
+                 WHERE cu.id=s.customer_id
+                   AND cu.customer_type <> 'premier'
+                   AND cu.contract_customer=FALSE
+              )`,
           [payment.shipment_id],
+        );
+
+        // A Premier shipment can already be delivered when the later charge
+        // succeeds. In that case the shipment stays delivered and only the
+        // customer's outstanding balance is reduced.
+        await client.query(
+          `UPDATE users u
+              SET outstanding_balance = GREATEST(0, COALESCE(u.outstanding_balance,0) - $2),
+                  updated_at = NOW()
+             WHERE u.id = $1
+               AND (u.customer_type='premier' OR u.contract_customer=TRUE)`,
+          [payment.customer_id, payment.amount],
         );
         // Consume the promo code only now that money actually arrived.
         await client.query(
@@ -108,10 +134,19 @@ exports.POST = async (request) => {
       });
 
       try {
+        const { rows: [paidShipment] } = await query(
+          `SELECT s.status, u.customer_type, u.contract_customer
+             FROM shipments s JOIN users u ON u.id=s.customer_id WHERE s.id=$1`,
+          [payment.shipment_id]
+        );
+        const premier = paidShipment?.customer_type === 'premier' || paidShipment?.contract_customer === true;
+        const message = premier && paidShipment?.status === 'delivered'
+          ? 'Payment received. Your Premier account balance has been updated.'
+          : 'Payment received. Your delivery is confirmed and will be assigned to a rider shortly.';
         await notify({
           userId: payment.customer_id,
           title: 'Payment received',
-          body: 'Your delivery is confirmed and will be assigned to a rider shortly.',
+          body: message,
           data: { type: 'payment.paid', shipment_id: payment.shipment_id },
         });
         const admins = await query(

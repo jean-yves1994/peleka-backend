@@ -30,7 +30,8 @@ exports.POST = withHandler(async (request) => {
     const { rows: [user] } = await client.query(
       `INSERT INTO users (email, phone, password_hash, full_name, role, status)
        VALUES ($1,$2,$3,$4,'customer','active')
-       RETURNING id, email, phone, full_name, role, status, created_at`,
+       RETURNING id, email, phone, full_name, role, status, customer_type,
+              contract_customer, credit_limit, outstanding_balance, created_at`,
       [email, phone, password_hash, body.full_name]
     );
     await client.query(`INSERT INTO customer_profiles (user_id) VALUES ($1)`, [user.id]);

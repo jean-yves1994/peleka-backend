@@ -21,7 +21,8 @@ async function requireAuth(request) {
   const payload = verifyAccessToken(token);
   if (payload.typ !== 'access') throw new UnauthorizedError('Wrong token type');
   const { rows } = await query(
-    `SELECT id, email, phone, full_name, role, status, avatar_url, created_at
+    `SELECT id, email, phone, full_name, role, status, avatar_url, created_at,
+              customer_type, contract_customer, credit_limit, outstanding_balance
        FROM users WHERE id = $1 AND deleted_at IS NULL`,
     [payload.sub]
   );

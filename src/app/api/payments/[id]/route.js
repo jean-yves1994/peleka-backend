@@ -66,7 +66,20 @@ exports.GET = withHandler(async (request, { params }) => {
                 WHERE id=$1 AND status='pending'`, [p.id]);
             await client.query(
               `UPDATE shipments SET status='awaiting_assignment'
-                WHERE id=$1 AND status IN ('pending_payment','draft')`, [p.shipment_id]);
+                WHERE id=$1 AND status IN ('pending_payment','draft')
+                  AND EXISTS (
+                    SELECT 1 FROM users cu
+                     WHERE cu.id=shipments.customer_id
+                       AND cu.customer_type <> 'premier'
+                       AND cu.contract_customer=FALSE
+                  )`, [p.shipment_id]);
+            await client.query(
+              `UPDATE users u
+                  SET outstanding_balance = GREATEST(0, COALESCE(u.outstanding_balance,0) - $2),
+                      updated_at=NOW()
+                 WHERE u.id=$1
+                   AND (u.customer_type='premier' OR u.contract_customer=TRUE)`,
+              [p.customer_id, p.amount]);
             await client.query(
               `INSERT INTO shipment_status_history
                  (shipment_id, from_status, to_status, changed_by, note)
@@ -120,6 +133,10 @@ exports.PATCH = withHandler(async (request, { params }) => {
 
   const updated = await withTransaction(async (client) => {
     const paidAt = status === 'paid' ? new Date() : null;
+    const { rows: beforeRows } = await client.query(`SELECT * FROM payments WHERE id=$1 FOR UPDATE`, [params.id]);
+    const before = beforeRows[0];
+    if (!before) throw new NotFoundError('Payment not found');
+    const wasAlreadyPaid = before.status === 'paid';
     const { rows } = await client.query(
       `UPDATE payments
           SET status=$2, provider_ref=COALESCE($3, provider_ref),
@@ -129,10 +146,25 @@ exports.PATCH = withHandler(async (request, { params }) => {
     const p = rows[0];
     if (!p) throw new NotFoundError('Payment not found');
 
+    if (status === 'paid' && wasAlreadyPaid) return p;
+
     if (status === 'paid') {
       await client.query(
         `UPDATE shipments SET status='awaiting_assignment'
-          WHERE id=$1 AND status IN ('pending_payment','draft')`, [p.shipment_id]);
+          WHERE id=$1 AND status IN ('pending_payment','draft')
+            AND EXISTS (
+              SELECT 1 FROM users cu
+               WHERE cu.id=shipments.customer_id
+                 AND cu.customer_type <> 'premier'
+                 AND cu.contract_customer=FALSE
+            )`, [p.shipment_id]);
+      await client.query(
+        `UPDATE users u
+            SET outstanding_balance = GREATEST(0, COALESCE(u.outstanding_balance,0) - $2),
+                updated_at=NOW()
+           WHERE u.id=$1
+             AND (u.customer_type='premier' OR u.contract_customer=TRUE)`,
+        [p.customer_id, p.amount]);
       await client.query(
         `INSERT INTO shipment_status_history
            (shipment_id, from_status, to_status, changed_by, note)

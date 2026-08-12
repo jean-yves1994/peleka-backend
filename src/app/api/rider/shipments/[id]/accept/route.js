@@ -47,6 +47,19 @@ exports.POST = withHandler(async (request, { params }) => {
         WHERE id = $2
           AND rider_id IS NULL
           AND status = 'awaiting_assignment'
+          AND EXISTS (
+            SELECT 1
+              FROM users cu
+             WHERE cu.id=shipments.customer_id
+               AND (
+                 cu.customer_type='premier'
+                 OR cu.contract_customer=TRUE
+                 OR EXISTS (
+                   SELECT 1 FROM payments p
+                    WHERE p.shipment_id=shipments.id AND p.status='paid'
+                 )
+               )
+          )
         RETURNING *`,
       [rider.id, params.id]
     );

@@ -46,4 +46,83 @@ async function verifyGoogleIdToken(idToken) {
     aud: payload.aud, iss: payload.iss,
   };
 }
-module.exports = { verifyGoogleIdToken };
+
+function mapsApiKey() {
+  return process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY || '';
+}
+
+async function googlePlacesSearch(text, { latitude, longitude, radiusMeters = 10000 } = {}) {
+  const key = mapsApiKey();
+  if (!key) throw new Error('GOOGLE_MAPS_API_KEY is not configured');
+
+  const body = { textQuery: text, languageCode: 'en' };
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    body.locationBias = {
+      circle: {
+        center: { latitude, longitude },
+        radius: Math.min(Math.max(Number(radiusMeters) || 10000, 100), 50000),
+      },
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  try {
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': [
+          'places.id',
+          'places.displayName',
+          'places.formattedAddress',
+          'places.location',
+          'places.types',
+        ].join(','),
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`Google Places returned ${res.status}: ${detail.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    return (data.places || []).map((p) => ({
+      place_id: p.id || null,
+      name: p.displayName?.text || '',
+      address: p.formattedAddress || '',
+      lat: p.location?.latitude ?? null,
+      lng: p.location?.longitude ?? null,
+      types: p.types || [],
+    }));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function reverseGeocode(latitude, longitude) {
+  const key = mapsApiKey();
+  if (!key) throw new Error('GOOGLE_MAPS_API_KEY is not configured');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(latitude)},${encodeURIComponent(longitude)}&key=${encodeURIComponent(key)}`;
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Google Geocoding returned ${res.status}`);
+    const data = await res.json();
+    const result = data.results?.[0];
+    if (!result) return null;
+    return {
+      address: result.formatted_address || '',
+      place_id: result.place_id || null,
+      lat: result.geometry?.location?.lat ?? latitude,
+      lng: result.geometry?.location?.lng ?? longitude,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+module.exports = { verifyGoogleIdToken, googlePlacesSearch, reverseGeocode };

@@ -403,3 +403,41 @@ peleka-backend/
 ## 🧾 License
 
 Copyright © Peleka. All rights reserved.
+
+
+## Peleka v2 workflow updates
+
+This package includes the following backend changes:
+
+- Customer registration uses a password with either email or phone; phone OTP/Firebase-phone registration endpoints have been removed.
+- Pickup location search is available through `GET /api/locations/search?q=...`, with optional current coordinates (`lat`, `lng`) used to bias results.
+- Current GPS pickup addresses can be resolved through `GET /api/locations/reverse?lat=...&lng=...`.
+- Pricing is distance-based. `price_per_kg` and `free_km` are no longer accepted by the pricing configuration API and are not used in fare calculation. Legacy database columns remain only for safe migration compatibility.
+- Customers have an explicit `standard` or `premier` account type. The older `contract_customer` field is kept synchronized for compatibility.
+- Premier customers can create shipments without immediate payment, subject to their configured credit limit. Their outstanding balance is tracked.
+- Riders can see `awaiting_assignment` shipments and claim them themselves. Standard shipments must have a paid payment; Premier shipments may be unpaid.
+- Rider self-claiming is protected by a conditional PostgreSQL update so two riders cannot claim the same shipment.
+- Premier shipment payments can be initiated later, including after delivery. Successful later payment reduces the customer's outstanding balance.
+- `GET /api/me/billing` provides Premier customers with their credit limit, outstanding balance, and shipment billing history.
+- Admins can manage customer type and credit limit with `PATCH /api/admin/customers/:id`.
+- Admin/dispatcher billing details are available at `GET /api/admin/customers/:id/billing`.
+
+### New environment requirement
+
+Location search/reverse geocoding requires a Google Maps/Places API key:
+
+```text
+GOOGLE_MAPS_API_KEY=your_key
+```
+
+Enable the Google Places API (New) and Geocoding API for the key. Restrict the key to the APIs and environments used by Peleka.
+
+### Migration
+
+Run the normal migration command after deploying:
+
+```text
+npm run migrate
+```
+
+Migration `0015_peleka_customer_pricing_update.sql` adds the explicit customer type and neutralizes legacy weight/free-km pricing values.

@@ -36,6 +36,11 @@ const registerCustomerSchema = z
     path: ["email"],
   });
 
+const customerAccountSchema = z.object({
+  customer_type: z.enum(["standard", "premier"]),
+  credit_limit: z.number().min(0).optional(),
+});
+
 const loginSchema = z
   .object({
     email: email.optional(),
@@ -55,17 +60,9 @@ const changePasswordSchema = z.object({
   new_password: password,
 });
 
-// Google Sign-In & OTP (v2)
+// Google Sign-In remains available. Phone OTP registration/login is removed:
+// phone accounts authenticate with the normal password flow.
 const googleAuthSchema = z.object({ id_token: z.string().min(20) });
-const otpSendSchema = z.object({
-  phone,
-  purpose: z.enum(["login", "signup", "verify"]).default("login"),
-});
-const otpVerifySchema = z.object({
-  phone,
-  code: z.string().regex(/^\d{4,8}$/, "Code must be 4-8 digits"),
-  full_name: z.string().trim().min(2).max(160).optional(),
-});
 
 const updateProfileSchema = z.object({
   full_name: z.string().trim().min(2).max(160).optional(),
@@ -110,7 +107,6 @@ const quoteShipmentSchema = z.object({
   pickup_lng: lng,
   delivery_lat: lat,
   delivery_lng: lng,
-  parcel_weight_kg: z.number().min(0).max(2000).default(1),
   pickup_city: z.string().max(120).optional(),
   delivery_city: z.string().max(120).optional(),
   discount_code: z.string().max(60).optional(),
@@ -137,7 +133,9 @@ const createShipmentSchema = z.object({
   requires_signature: z.boolean().optional().default(false),
   parcel_description: z.string().trim().min(2).max(500),
   parcel_category: z.string().max(60).optional(),
-  parcel_weight_kg: z.number().min(0.01).max(2000).default(1),
+  // Weight is retained as shipment information for riders, but is not a
+  // pricing input. The client may omit it.
+  parcel_weight_kg: z.number().min(0.01).max(2000).optional().default(1),
   parcel_length_cm: z.number().min(0).max(1000).optional(),
   parcel_width_cm: z.number().min(0).max(1000).optional(),
   parcel_height_cm: z.number().min(0).max(1000).optional(),
@@ -196,11 +194,9 @@ const pricingConfigSchema = z.object({
   currency: z.string().min(3).max(8).default("USD"),
   base_fare: z.number().min(0),
   price_per_km: z.number().min(0),
-  price_per_kg: z.number().min(0).default(0),
   price_per_minute: z.number().min(0).default(0),
   min_price: z.number().min(0).default(0),
   max_price: z.number().min(0).optional(),
-  free_km: z.number().min(0).default(0),
   surge_multiplier: z.number().min(0.1).max(10).default(1),
   tax_percentage: z.number().min(0).max(100).default(0),
   rider_commission_percentage: z.number().min(0).max(100).default(30),
@@ -278,8 +274,6 @@ module.exports = {
   resetPasswordSchema,
   changePasswordSchema,
   googleAuthSchema,
-  otpSendSchema,
-  otpVerifySchema,
   updateProfileSchema,
   createRiderSchema,
   updateRiderStatusSchema,
@@ -298,4 +292,5 @@ module.exports = {
   updatePaymentStatusSchema,
   deviceTokenSchema,
   complaintSchema,
+  customerAccountSchema,
 };

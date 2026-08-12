@@ -44,13 +44,13 @@ exports.POST = withHandler(async (request) => {
   // Tell the app whether this customer pays now or gets invoiced, so the button
   // can read "Place order" rather than "Pay 2,500 RWF" on a contract account.
   const { rows: [customer] } = await query(
-    `SELECT contract_customer FROM users WHERE id = $1`, [user.id]
+    `SELECT customer_type, contract_customer FROM users WHERE id = $1`, [user.id]
   );
-  const isContract = customer?.contract_customer === true;
+  const isPremier = customer?.customer_type === 'premier' || customer?.contract_customer === true;
 
   return ok({
     ...quote,
-    payment_required: !isContract,
+    payment_required: !isPremier,
     // Riders' and Peleka's shares are in `quote` for the admin dashboard; the
     // customer app should only ever display total_price.
   });

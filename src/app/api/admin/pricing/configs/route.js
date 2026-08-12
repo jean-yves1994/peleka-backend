@@ -48,12 +48,12 @@ exports.POST = withHandler(async (request) => {
     }
     const { rows: [c] } = await client.query(
       `INSERT INTO pricing_configs
-         (name, currency, base_fare, price_per_km, price_per_kg, price_per_minute,
-          min_price, max_price, free_km, surge_multiplier, tax_percentage,
+         (name, currency, base_fare, price_per_km, price_per_minute,
+          min_price, max_price, surge_multiplier, tax_percentage,
           rider_commission_percentage, moto_commission_percentage, is_active, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
-      [body.name, body.currency, body.base_fare, body.price_per_km, body.price_per_kg,
-       body.price_per_minute, body.min_price, body.max_price ?? null, body.free_km,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [body.name, body.currency, body.base_fare, body.price_per_km,
+       body.price_per_minute, body.min_price, body.max_price ?? null,
        body.surge_multiplier, body.tax_percentage, riderPct, motoPct,
        !!body.is_active, admin.id]
     );
@@ -65,8 +65,9 @@ exports.POST = withHandler(async (request) => {
     entityType: 'pricing_config', entityId: config.id,
   });
 
+  const { price_per_kg, free_km, ...publicConfig } = config;
   return created({
-    ...config,
+    ...publicConfig,
     // Derived, so nobody has to work out the remainder by hand.
     platform_commission_percentage: Number((100 - riderPct - motoPct).toFixed(2)),
   });
@@ -77,11 +78,13 @@ exports.GET = withHandler(async (request) => {
   const { rows } = await query(
     `SELECT * FROM pricing_configs ORDER BY is_active DESC, updated_at DESC`,
   );
-  return ok(rows.map((c) => ({
-    ...c,
+  return ok(rows.map((c) => {
+    const { price_per_kg, free_km, ...publicConfig } = c;
+    return ({
+    ...publicConfig,
     platform_commission_percentage: Number(
       (100 - Number(c.rider_commission_percentage ?? 0)
            - Number(c.moto_commission_percentage ?? 0)).toFixed(2),
     ),
-  })));
+  }); }));
 });

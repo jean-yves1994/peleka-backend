@@ -47,9 +47,9 @@ async function main() {
     if (existing.rowCount === 0) {
       await client.query(
         `INSERT INTO pricing_configs
-          (name, currency, base_fare, price_per_km, price_per_kg, min_price,
+          (name, currency, base_fare, price_per_km, min_price,
            surge_multiplier, tax_percentage, rider_commission_percentage, is_active, created_by)
-         VALUES ('Default Pricing','USD',2.00,0.80,0.20,3.00,1.00,0.00,70.00,TRUE,$1)`,
+         VALUES ('Default Pricing','USD',2.00,0.80,3.00,1.00,0.00,70.00,TRUE,$1)`,
         [admin.rows[0].id]
       );
       console.log('✓ Default pricing config created');

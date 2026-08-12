@@ -15,14 +15,17 @@ exports.GET = withHandler(async (request, { params }) => {
   const isAdmin = user.role === 'admin' || user.role === 'dispatcher';
   if (!isOwner && !isAssigned && !isAdmin) throw new ForbiddenError();
 
-  const [history, proofs, rating, payments] = await Promise.all([
+  const [history, proofs, rating, payments, customer] = await Promise.all([
     query(`SELECT * FROM shipment_status_history WHERE shipment_id=$1 ORDER BY created_at ASC`, [params.id]),
     query(`SELECT * FROM shipment_proofs         WHERE shipment_id=$1 ORDER BY captured_at ASC`, [params.id]),
     query(`SELECT * FROM ratings                 WHERE shipment_id=$1`, [params.id]),
     query(`SELECT * FROM payments                WHERE shipment_id=$1 ORDER BY created_at ASC`, [params.id]),
+    query(`SELECT customer_type, contract_customer, credit_limit, outstanding_balance
+             FROM users WHERE id=$1`, [shipment.customer_id]),
   ]);
   return ok({
     shipment, status_history: history.rows, proofs: proofs.rows,
     rating: rating.rows[0] || null, payments: payments.rows,
+    customer_billing: customer.rows[0] || null,
   });
 });

@@ -42,7 +42,16 @@ async function up() {
       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );`);
 
-    const files = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort();
+    // Sort by the numeric migration prefix rather than raw ASCII. This keeps
+    // `001_extensions_and_enums.sql` (migration 1) before `0013_...`, `0014_...`
+    // and the newer migrations on a fresh database.
+    const files = fs.readdirSync(MIGRATIONS_DIR)
+      .filter(f => f.endsWith('.sql'))
+      .sort((a, b) => {
+        const na = Number((a.match(/^(\d+)/) || ['0'])[1]);
+        const nb = Number((b.match(/^(\d+)/) || ['0'])[1]);
+        return na - nb || a.localeCompare(b);
+      });
     const { rows } = await client.query('SELECT filename FROM _migrations');
     const applied = new Set(rows.map(r => r.filename));
 

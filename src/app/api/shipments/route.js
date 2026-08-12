@@ -43,7 +43,6 @@ exports.POST = withHandler(async (request) => {
     pickup_lng: body.pickup_lng,
     delivery_lat: body.delivery_lat,
     delivery_lng: body.delivery_lng,
-    parcel_weight_kg: body.parcel_weight_kg,
     pickup_city: body.pickup_city,
     delivery_city: body.delivery_city,
     discount_code: body.discount_code,
@@ -55,13 +54,13 @@ exports.POST = withHandler(async (request) => {
   // Read against customer_id, not user.id — an admin creating on someone's
   // behalf must get that customer's terms, not their own.
   const { rows: [customer] } = await query(
-    `SELECT contract_customer, credit_limit, outstanding_balance
+    `SELECT customer_type, contract_customer, credit_limit, outstanding_balance
        FROM users WHERE id = $1`,
     [customer_id]
   );
-  const isContract = customer?.contract_customer === true;
+  const isPremier = customer?.customer_type === 'premier' || customer?.contract_customer === true;
 
-  if (isContract && Number(customer.credit_limit) > 0) {
+  if (isPremier && Number(customer.credit_limit) > 0) {
     const projected = Number(customer.outstanding_balance || 0) + Number(quote.total_price);
     if (projected > Number(customer.credit_limit)) {
       throw new BadRequestError(
@@ -73,7 +72,7 @@ exports.POST = withHandler(async (request) => {
 
   // Contract customers dispatch immediately and are billed later. Everyone
   // else waits for the Paypack webhook to release the shipment.
-  const initialStatus = isContract ? 'awaiting_assignment' : 'pending_payment';
+  const initialStatus = isPremier ? 'awaiting_assignment' : 'pending_payment';
 
   const shipment = await withTransaction(async (client) => {
     const { rows: [s] } = await client.query(
@@ -122,14 +121,14 @@ exports.POST = withHandler(async (request) => {
       `INSERT INTO shipment_status_history (shipment_id, from_status, to_status, changed_by, note)
        VALUES ($1, NULL, $2, $3, $4)`,
       [s.id, initialStatus, user.id,
-       isContract ? 'Shipment created — contract account, dispatching on invoice terms'
+       isPremier ? 'Shipment created — Premier account, dispatching on invoice terms'
                   : 'Shipment created, awaiting payment']
     );
 
     // ⚠️ The promo code is consumed here ONLY for contract customers, because
     // they never hit the Paypack webhook. For everyone else the webhook does it
     // on payment — incrementing in both places burned each code twice.
-    if (isContract && body.discount_code) {
+    if (isPremier && body.discount_code) {
       await client.query(
         `UPDATE discounts SET used_count = used_count + 1 WHERE code = $1`,
         [body.discount_code]
@@ -137,7 +136,7 @@ exports.POST = withHandler(async (request) => {
     }
 
     // Contract customers owe this straight away; there's no payment to wait for.
-    if (isContract) {
+    if (isPremier) {
       await client.query(
         `UPDATE users SET outstanding_balance = COALESCE(outstanding_balance, 0) + $2
           WHERE id = $1`,
@@ -148,21 +147,22 @@ exports.POST = withHandler(async (request) => {
     return s;
   });
 
+
   await logAudit({
     request, actor: user, action: 'shipment.created', entityType: 'shipment',
     entityId: shipment.id,
     data: {
       tracking_number: shipment.tracking_number,
       total_price: shipment.total_price,
-      status: initialStatus,
-      contract_customer: isContract,
+      status: shipment.status,
+      premier_customer: isPremier,
     },
   });
 
-  // Only contract shipments are dispatchable at creation. For prepaid ones the
+  // Only Premier shipments are dispatchable at creation. For prepaid ones the
   // webhook notifies admins when payment lands — telling them now would put a
   // shipment on the board that no rider is allowed to take yet.
-  if (isContract) {
+  if (isPremier) {
     try {
       const admins = await query(`SELECT id FROM users WHERE role='admin' AND status='active'`);
       await Promise.all(admins.rows.map(a => notify({
@@ -178,7 +178,7 @@ exports.POST = withHandler(async (request) => {
     ...shipment,
     // The app branches on this to decide between the payment screen and going
     // straight to tracking.
-    payment_required: !isContract,
+    payment_required: !isPremier,
     quote,
   });
 });
@@ -201,11 +201,20 @@ exports.GET = withHandler(async (request) => {
   const orderBy = allowedSort.has(sortCol) ? sortCol : 'created_at';
 
   const { rows } = await query(
-    `SELECT * FROM shipments ${where} ORDER BY ${orderBy} ${sortDir} LIMIT ${pageSize} OFFSET ${offset}`,
+    `SELECT s.*,
+            u.customer_type,
+            u.contract_customer,
+            u.outstanding_balance AS customer_outstanding_balance,
+            COALESCE((SELECT p.status FROM payments p
+                      WHERE p.shipment_id=s.id ORDER BY p.created_at DESC LIMIT 1), 'unpaid') AS payment_status
+       FROM shipments s
+       LEFT JOIN users u ON u.id=s.customer_id
+       ${where.replace(/\bcustomer_id\b/g,'s.customer_id').replace(/\brider_id\b/g,'s.rider_id').replace(/\bstatus\b/g,'s.status')}
+       ORDER BY s.${orderBy} ${sortDir} LIMIT ${pageSize} OFFSET ${offset}`,
     params
   );
   const { rows: [{ count }] } = await query(
-    `SELECT COUNT(*)::int AS count FROM shipments ${where}`, params
+    `SELECT COUNT(*)::int AS count FROM shipments s ${where.replace(/\bcustomer_id\b/g,'s.customer_id').replace(/\brider_id\b/g,'s.rider_id').replace(/\bstatus\b/g,'s.status')}`, params
   );
 
   return paginated(rows, { page, pageSize, total: count });

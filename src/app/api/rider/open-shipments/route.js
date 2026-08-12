@@ -44,17 +44,29 @@ exports.GET = withHandler(async (request) => {
   );
 
   const { rows } = await query(
-    `SELECT id, tracking_number, created_at,
-            pickup_address, pickup_city, pickup_lat, pickup_lng, pickup_notes,
-            delivery_address, delivery_city, delivery_lat, delivery_lng,
-            parcel_description, parcel_category, parcel_weight_kg,
-            is_fragile, requires_signature,
-            distance_km, duration_minutes,
-            total_price, currency, rider_earnings
-       FROM shipments
-      WHERE rider_id IS NULL
-        AND status = 'awaiting_assignment'
-      ORDER BY created_at ASC
+    `SELECT s.id, s.tracking_number, s.created_at,
+            s.pickup_address, s.pickup_city, s.pickup_lat, s.pickup_lng, s.pickup_notes,
+            s.delivery_address, s.delivery_city, s.delivery_lat, s.delivery_lng,
+            s.parcel_description, s.parcel_category, s.parcel_weight_kg,
+            s.is_fragile, s.requires_signature,
+            s.distance_km, s.duration_minutes,
+            s.total_price, s.currency, s.rider_earnings,
+            COALESCE((SELECT p.status FROM payments p
+                      WHERE p.shipment_id=s.id ORDER BY p.created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+            cu.customer_type
+       FROM shipments s
+       JOIN users cu ON cu.id=s.customer_id
+      WHERE s.rider_id IS NULL
+        AND s.status = 'awaiting_assignment'
+        AND (
+          cu.customer_type = 'premier'
+          OR cu.contract_customer = TRUE
+          OR EXISTS (
+            SELECT 1 FROM payments p
+             WHERE p.shipment_id=s.id AND p.status='paid'
+          )
+        )
+      ORDER BY s.created_at ASC
       LIMIT $1`,
     [limit]
   );

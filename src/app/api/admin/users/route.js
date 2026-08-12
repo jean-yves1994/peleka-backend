@@ -17,7 +17,8 @@ exports.GET = withHandler(async (request) => {
   const where = `WHERE ${filters.join(' AND ')}`;
   const listParams = [...params, pageSize, offset];
   const { rows } = await query(
-    `SELECT id, email, phone, full_name, role, status, avatar_url, created_at, last_login_at
+    `SELECT id, email, phone, full_name, role, status, avatar_url, created_at, last_login_at,
+              customer_type, contract_customer, credit_limit, outstanding_balance
        FROM users ${where} ORDER BY created_at DESC
        LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`, listParams
   );
