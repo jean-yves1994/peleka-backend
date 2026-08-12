@@ -41,27 +41,21 @@ function computeDiscount(subtotal, discount) {
 /**
  * Split the net fare three ways: rider, motorbike owner, Peleka.
  *
- * Riders in Kigali frequently ride a bike they don't own, so the fare splits
- * three ways rather than two.
- *
- * The base is `afterDiscount` — the PRE-TAX amount — matching how
- * rider_earnings was already calculated here. VAT belongs to RRA and isn't
- * anyone's commission to share.
+ * The base is `afterDiscount` — the PRE-TAX amount. VAT belongs to RRA and
+ * isn't anyone's commission to share.
  *
  * Peleka takes the REMAINDER rather than its own rounded percentage. Three
- * independent roundings can otherwise miss the net by a franc, and payouts
- * stop reconciling against what was collected.
+ * independent roundings can otherwise miss the net by a franc, and payouts stop
+ * reconciling against what was actually collected.
  *
  * Guarded so a bad config can't hand out more than came in: if the two
- * percentages exceed 100 (the DB CHECK should prevent it, but a config created
- * before that constraint existed wouldn't be caught), the motorbike share is
- * capped and Peleka lands at zero rather than negative.
+ * percentages exceed 100, the motorbike share is capped and Peleka lands at
+ * zero rather than negative.
  */
 function splitEarnings(afterDiscount, config) {
   const riderPct = Math.max(0, Number(config.rider_commission_percentage) || 0);
   const rawMotoPct = Math.max(0, Number(config.moto_commission_percentage) || 0);
 
-  // Never promise out more than the net fare.
   const motoPct = Math.min(rawMotoPct, Math.max(0, 100 - riderPct));
 
   const rider_earnings = round2(afterDiscount * (riderPct / 100));
@@ -77,6 +71,29 @@ function splitEarnings(afterDiscount, config) {
   };
 }
 
+/**
+ * Quote a shipment.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * DISTANCE-ONLY PRICING
+ *
+ *     fare = base_fare + (billable_km × price_per_km)
+ *
+ * Parcel weight no longer affects the price. `weight_fee` is always 0 and
+ * `config.price_per_kg` is deliberately never read — leaving the read in would
+ * let a stale value on an old config quietly reappear in a fare.
+ *
+ * `weight_fee` is still returned, and still written to the shipment, because
+ * the column is NOT NULL and existing receipts and dashboards read it. It just
+ * always reads 0.00.
+ *
+ * `parcel_weight_kg` is still accepted and stored — useful for the rider to
+ * know what they're carrying — it simply doesn't enter the calculation.
+ *
+ * ⚠️ `time_fee` is also not distance. It survives here because your config has
+ *    `price_per_minute DEFAULT 0.00`, so it contributes nothing unless someone
+ *    sets it. Say the word and I'll strip it out entirely.
+ */
 async function quoteShipment(args) {
   const config = await getActivePricingConfig();
   const route = await findRouteOverride(args.pickup_city, args.delivery_city);
@@ -87,7 +104,11 @@ async function quoteShipment(args) {
   );
 
   const currency = route?.currency || config.currency;
-  let base_fare = 0, distance_fee = 0, weight_fee = 0, time_fee = 0, subtotal = 0;
+  let base_fare = 0, distance_fee = 0, time_fee = 0, subtotal = 0;
+
+  // Weight never affects the fare. Held at 0 so the NOT NULL column and any
+  // existing receipt layout still work.
+  const weight_fee = 0;
 
   if (route) {
     subtotal = round2(Number(route.flat_price));
@@ -96,9 +117,9 @@ async function quoteShipment(args) {
     base_fare = round2(Number(config.base_fare));
     const billableKm = Math.max(0, dm.distance_km - Number(config.free_km || 0));
     distance_fee = round2(billableKm * Number(config.price_per_km));
-    weight_fee = round2(Number(args.parcel_weight_kg || 0) * Number(config.price_per_kg));
-    time_fee = round2(dm.duration_minutes * Number(config.price_per_minute));
-    let raw = base_fare + distance_fee + weight_fee + time_fee;
+    time_fee = round2(dm.duration_minutes * Number(config.price_per_minute || 0));
+
+    let raw = base_fare + distance_fee + time_fee;
     raw *= Number(config.surge_multiplier || 1);
     if (raw < Number(config.min_price)) raw = Number(config.min_price);
     if (config.max_price && raw > Number(config.max_price)) raw = Number(config.max_price);
@@ -110,7 +131,6 @@ async function quoteShipment(args) {
   const tax_amount = round2(afterDiscount * (Number(config.tax_percentage) / 100));
   const total_price = round2(afterDiscount + tax_amount);
 
-  // Three-way split of the pre-tax net.
   const earnings = splitEarnings(afterDiscount, config);
 
   return {
@@ -121,8 +141,6 @@ async function quoteShipment(args) {
     discount_code: discount?.code || null, discount_amount,
     tax_amount, total_price,
 
-    // rider_earnings is unchanged in both name and value — nothing that reads
-    // it today needs to know about the rest.
     rider_earnings: earnings.rider_earnings,
     moto_earnings: earnings.moto_earnings,
     platform_earnings: earnings.platform_earnings,
@@ -133,7 +151,7 @@ async function quoteShipment(args) {
     rider_commission_percentage: earnings.rider_commission_percentage,
     moto_commission_percentage: earnings.moto_commission_percentage,
 
-    breakdown_note: route ? 'Flat route pricing applied' : 'Standard distance-based pricing',
+    breakdown_note: route ? 'Flat route pricing applied' : 'Distance-based pricing',
   };
 }
 module.exports = { quoteShipment, getActivePricingConfig, loadDiscount, splitEarnings };
