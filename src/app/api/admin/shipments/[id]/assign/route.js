@@ -18,6 +18,22 @@ exports.POST = withHandler(async (request, { params }) => {
     if (!s) throw new NotFoundError('Shipment not found');
     if (!['awaiting_assignment','pending_payment','draft'].includes(s.status))
       throw new ConflictError(`Cannot offer assignment for status "${s.status}"`);
+
+    // Standard customers must pay before a dispatcher can offer the shipment.
+    // Premier customers are explicitly allowed to be dispatched while their
+    // payment remains outstanding. Keep this rule in the backend as well as
+    // the admin UI so the API cannot be bypassed.
+    if (s.status === 'pending_payment') {
+      const { rows: [customer] } = await client.query(
+        `SELECT customer_type, contract_customer
+           FROM users WHERE id=$1 AND role='customer'`,
+        [s.customer_id],
+      );
+      const premier = customer?.customer_type === 'premier' || customer?.contract_customer === true;
+      if (!premier) {
+        throw new ConflictError('Standard customer shipment cannot be assigned until payment is completed');
+      }
+    }
     const rider = await client.query(
       `SELECT u.id, u.status AS account_status, rp.status AS rider_status
          FROM users u JOIN rider_profiles rp ON rp.user_id=u.id

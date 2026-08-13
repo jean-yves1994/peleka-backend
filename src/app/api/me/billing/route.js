@@ -22,7 +22,7 @@ exports.GET = withHandler(async (request) => {
   const { rows: shipments } = await query(
     `SELECT s.id, s.tracking_number, s.status, s.total_price, s.currency,
             s.created_at, s.delivered_at,
-            COALESCE((SELECT p.status FROM payments p
+            COALESCE((SELECT p.status::text FROM payments p
                       WHERE p.shipment_id=s.id
                       ORDER BY p.created_at DESC LIMIT 1), 'unpaid') AS payment_status
        FROM shipments s

@@ -12,6 +12,7 @@ exports.GET = withHandler(async (request) => {
     { rows: [riders] },
     { rows: recentShipments },
     { rows: byStatus },
+    { rows: [premierBilling] },
   ] = await Promise.all([
     query(`SELECT
       COUNT(*)::int AS total,
@@ -36,6 +37,10 @@ exports.GET = withHandler(async (request) => {
     query(`SELECT id, tracking_number, status, total_price, currency, created_at
              FROM shipments ORDER BY created_at DESC LIMIT 10`),
     query(`SELECT status::text AS status, COUNT(*)::int AS count FROM shipments GROUP BY status`),
+    query(`SELECT
+      COUNT(*) FILTER (WHERE customer_type='premier' OR contract_customer=TRUE)::int AS premier_customers,
+      COALESCE(SUM(outstanding_balance) FILTER (WHERE customer_type='premier' OR contract_customer=TRUE),0)::numeric(14,2) AS premier_outstanding
+      FROM users WHERE role='customer' AND deleted_at IS NULL`),
   ]);
-  return ok({ shipments: ship, revenue: rev, riders, by_status: byStatus, recent_shipments: recentShipments });
+  return ok({ shipments: ship, revenue: rev, riders, by_status: byStatus, recent_shipments: recentShipments, premier_billing: premierBilling });
 });

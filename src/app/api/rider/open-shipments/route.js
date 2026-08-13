@@ -51,7 +51,7 @@ exports.GET = withHandler(async (request) => {
             s.is_fragile, s.requires_signature,
             s.distance_km, s.duration_minutes,
             s.total_price, s.currency, s.rider_earnings,
-            COALESCE((SELECT p.status FROM payments p
+            COALESCE((SELECT p.status::text FROM payments p
                       WHERE p.shipment_id=s.id ORDER BY p.created_at DESC LIMIT 1), 'unpaid') AS payment_status,
             cu.customer_type
        FROM shipments s

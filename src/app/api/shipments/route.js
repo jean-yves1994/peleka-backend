@@ -205,7 +205,7 @@ exports.GET = withHandler(async (request) => {
             u.customer_type,
             u.contract_customer,
             u.outstanding_balance AS customer_outstanding_balance,
-            COALESCE((SELECT p.status FROM payments p
+            COALESCE((SELECT p.status::text FROM payments p
                       WHERE p.shipment_id=s.id ORDER BY p.created_at DESC LIMIT 1), 'unpaid') AS payment_status
        FROM shipments s
        LEFT JOIN users u ON u.id=s.customer_id
