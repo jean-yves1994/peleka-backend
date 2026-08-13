@@ -38,8 +38,8 @@ exports.PATCH = withHandler(async (request, { params }) => {
 
     const { rows } = await client.query(
       `UPDATE users
-          SET customer_type=$2,
-              contract_customer=($2='premier'),
+          SET customer_type=$2::varchar(20),
+              contract_customer=($2::varchar(20)='premier'),
               credit_limit=COALESCE($3, credit_limit),
               updated_at=NOW()
         WHERE id=$1
