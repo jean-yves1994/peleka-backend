@@ -82,7 +82,6 @@ exports.POST = withHandler(async (request) => {
         recipient_name, recipient_phone, recipient_email,
         pickup_address, pickup_city, pickup_lat, pickup_lng, pickup_notes, pickup_scheduled_at,
         delivery_address, delivery_city, delivery_lat, delivery_lng, delivery_notes, delivery_scheduled_at,
-        requires_signature,
         parcel_description, parcel_category, parcel_weight_kg,
         parcel_length_cm, parcel_width_cm, parcel_height_cm, parcel_declared_value, is_fragile,
         pricing_config_id, distance_km, duration_minutes,
@@ -93,7 +92,7 @@ exports.POST = withHandler(async (request) => {
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
         $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,
-        $39,$40,$41,$42,$43,$44,$45,$46,$47,$48
+        $39,$40,$41,$42,$43,$44,$45,$46,$47
       ) RETURNING *`,
       [
         customer_id, initialStatus,
@@ -103,7 +102,6 @@ exports.POST = withHandler(async (request) => {
         body.pickup_notes || null, body.pickup_scheduled_at || null,
         body.delivery_address, body.delivery_city || null, body.delivery_lat, body.delivery_lng,
         body.delivery_notes || null, body.delivery_scheduled_at || null,
-        body.requires_signature,
         body.parcel_description, body.parcel_category || null, body.parcel_weight_kg,
         body.parcel_length_cm || null, body.parcel_width_cm || null,
         body.parcel_height_cm || null, body.parcel_declared_value || null, body.is_fragile,

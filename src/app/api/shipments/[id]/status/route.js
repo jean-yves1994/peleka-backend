@@ -37,10 +37,6 @@ exports.PATCH = withHandler(async (request, { params }) => {
     if (body.status === 'delivered') {
       const p = await client.query(`SELECT 1 FROM shipment_proofs WHERE shipment_id=$1 AND kind='delivery_photo' LIMIT 1`, [s.id]);
       if (p.rowCount === 0) throw new BadRequestError('Delivery photo proof is required before marking delivered');
-      if (s.requires_signature) {
-        const sig = await client.query(`SELECT 1 FROM shipment_proofs WHERE shipment_id=$1 AND kind='signature' LIMIT 1`, [s.id]);
-        if (sig.rowCount === 0) throw new BadRequestError('Recipient signature is required for this shipment');
-      }
     }
     const ts = {};
     if (body.status === 'picked_up') ts.picked_up_at = new Date();

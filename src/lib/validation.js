@@ -130,7 +130,6 @@ const createShipmentSchema = z.object({
   delivery_lng: lng,
   delivery_notes: z.string().max(1000).optional(),
   delivery_scheduled_at: z.string().datetime().optional(),
-  requires_signature: z.boolean().optional().default(false),
   parcel_description: z.string().trim().min(2).max(500),
   parcel_category: z.string().max(60).optional(),
   // Weight is retained as shipment information for riders, but is not a
@@ -170,13 +169,7 @@ const assignmentResponseSchema = z.object({
   reject_reason: z.string().max(300).optional(),
 });
 const uploadProofSchema = z.object({
-  kind: z.enum([
-    "pickup_photo",
-    "delivery_photo",
-    "signature",
-    "id_photo",
-    "other",
-  ]),
+  kind: z.enum(["pickup_photo", "delivery_photo"]),
   file_url: z.string().url(),
   mime_type: z.string().max(80).optional(),
   file_size: z.number().int().min(0).optional(),
