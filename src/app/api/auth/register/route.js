@@ -16,6 +16,12 @@ exports.POST = withHandler(async (request) => {
   const body = registerCustomerSchema.parse(await readJson(request));
   const phone = body.phone ? normalizePhone(body.phone) : null;
   const email = body.email || null;
+  // The schema already verifies confirmation fields. Keep the values normalized here.
+  const confirmEmail = body.confirm_email || null;
+  const confirmPhone = body.confirm_phone ? normalizePhone(body.confirm_phone) : null;
+  if (email && confirmEmail !== email) throw new ConflictError('Email addresses do not match');
+  if (phone && confirmPhone !== phone) throw new ConflictError('Phone numbers do not match');
+  if (body.password !== body.confirm_password) throw new ConflictError('Passwords do not match');
 
   const existing = await query(
     `SELECT 1 FROM users

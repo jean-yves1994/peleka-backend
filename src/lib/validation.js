@@ -27,13 +27,29 @@ const uuid = z.string().uuid();
 const registerCustomerSchema = z
   .object({
     email: email.optional(),
+    confirm_email: email.optional(),
     phone: phone.optional(),
+    confirm_phone: phone.optional(),
     password,
+    confirm_password: z.string().min(1),
     full_name: z.string().trim().min(2).max(160),
   })
-  .refine((v) => !!(v.email || v.phone), {
-    message: "Either email or phone is required",
-    path: ["email"],
+  .superRefine((v, ctx) => {
+    if (!v.email && !v.phone) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Either email or phone is required", path: ["email"] });
+    }
+    if (v.email && v.confirm_email !== v.email) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Email addresses do not match", path: ["confirm_email"] });
+    }
+    if (v.phone) {
+      const normalize = (value) => String(value).replace(/[\s\-()]/g, '').trim();
+      if (!v.confirm_phone || normalize(v.confirm_phone) !== normalize(v.phone)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Phone numbers do not match", path: ["confirm_phone"] });
+      }
+    }
+    if (v.password !== v.confirm_password) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Passwords do not match", path: ["confirm_password"] });
+    }
   });
 
 const customerAccountSchema = z.object({
