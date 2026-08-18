@@ -31,6 +31,7 @@ async function sendSms(to, body) {
   try {
     if (PROVIDER === 'twilio') return await sendTwilio(to, body);
     if (PROVIDER === 'at') return await sendAfricasTalking(to, body);
+    if (process.env.NODE_ENV === 'production') return { ok: false, error: 'sms_provider_not_configured' };
     console.log(`[sms:dev] to=${to}  body="${body}"`);
     return { ok: true, delivered: false, dev: true };
   } catch (err) {

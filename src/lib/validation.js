@@ -69,8 +69,14 @@ const loginSchema = z
   });
 
 const refreshSchema = z.object({ refresh_token: z.string().min(20) });
-const forgotPasswordSchema = z.object({ email });
+const forgotPasswordSchema = z.object({
+  identifier: z.string().trim().min(3),
+});
 const resetPasswordSchema = z.object({ token: z.string().min(20), password });
+const verifyPasswordResetPhoneSchema = z.object({
+  phone: phone,
+  code: z.string().regex(/^\d{6}$/, 'Code must be 6 digits'),
+});
 const changePasswordSchema = z.object({
   current_password: z.string().min(1),
   new_password: password,
@@ -281,6 +287,7 @@ module.exports = {
   refreshSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  verifyPasswordResetPhoneSchema,
   changePasswordSchema,
   googleAuthSchema,
   updateProfileSchema,
