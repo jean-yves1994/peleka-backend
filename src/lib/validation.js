@@ -36,19 +36,41 @@ const registerCustomerSchema = z
   })
   .superRefine((v, ctx) => {
     if (!v.email && !v.phone) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Either email or phone is required", path: ["email"] });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Either email or phone is required",
+        path: ["email"],
+      });
     }
     if (v.email && v.confirm_email !== v.email) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Email addresses do not match", path: ["confirm_email"] });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Email addresses do not match",
+        path: ["confirm_email"],
+      });
     }
     if (v.phone) {
-      const normalize = (value) => String(value).replace(/[\s\-()]/g, '').trim();
-      if (!v.confirm_phone || normalize(v.confirm_phone) !== normalize(v.phone)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Phone numbers do not match", path: ["confirm_phone"] });
+      const normalize = (value) =>
+        String(value)
+          .replace(/[\s\-()]/g, "")
+          .trim();
+      if (
+        !v.confirm_phone ||
+        normalize(v.confirm_phone) !== normalize(v.phone)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Phone numbers do not match",
+          path: ["confirm_phone"],
+        });
       }
     }
     if (v.password !== v.confirm_password) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Passwords do not match", path: ["confirm_password"] });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Passwords do not match",
+        path: ["confirm_password"],
+      });
     }
   });
 
@@ -75,7 +97,7 @@ const forgotPasswordSchema = z.object({
 const resetPasswordSchema = z.object({ token: z.string().min(20), password });
 const verifyPasswordResetPhoneSchema = z.object({
   phone: phone,
-  code: z.string().regex(/^\d{6}$/, 'Code must be 6 digits'),
+  code: z.string().regex(/^\d{6}$/, "Code must be 6 digits"),
 });
 const changePasswordSchema = z.object({
   current_password: z.string().min(1),
@@ -136,10 +158,8 @@ const quoteShipmentSchema = z.object({
 const createShipmentSchema = z.object({
   sender_name: z.string().trim().min(2).max(160),
   sender_phone: phone,
-  sender_email: email.optional(),
   recipient_name: z.string().trim().min(2).max(160),
   recipient_phone: phone,
-  recipient_email: email.optional(),
   pickup_address: z.string().trim().min(3).max(500),
   pickup_city: z.string().max(120).optional(),
   pickup_lat: lat,
