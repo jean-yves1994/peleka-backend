@@ -119,12 +119,6 @@ async function quoteShipment(args) {
     args.pickup_lng,
     args.delivery_lat,
     args.delivery_lng,
-    //Test OSRM distance service, log the request and response for debugging
-    console.log("[OSRM TEST]", {
-      pickup: `${pickup.lng},${pickup.lat}`,
-      delivery: `${delivery.lng},${delivery.lat}`,
-      url,
-    }),
   );
   const dm = {
     distance_km: dmRaw.km,
