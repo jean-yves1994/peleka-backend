@@ -86,8 +86,8 @@ exports.POST = withHandler(async (request) => {
     } = await client.query(
       `INSERT INTO shipments (
         customer_id, status,
-        sender_name, sender_phone, sender_email,
-        recipient_name, recipient_phone, recipient_email,
+        sender_name, sender_phone,
+        recipient_name, recipient_phone,
         pickup_address, pickup_city, pickup_lat, pickup_lng, pickup_notes, pickup_scheduled_at,
         delivery_address, delivery_city, delivery_lat, delivery_lng, delivery_notes, delivery_scheduled_at,
         parcel_description, parcel_category, parcel_weight_kg,
