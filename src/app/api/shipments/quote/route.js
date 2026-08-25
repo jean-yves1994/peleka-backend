@@ -1,57 +1,40 @@
 const { readJson } = require('@/lib/middleware');
-const { requireAuth } = require('@/lib/auth');
+const { requireRole } = require('@/lib/auth');
 const { quoteShipmentSchema } = require('@/lib/validation');
 const { quoteShipment } = require('@/lib/pricing');
 const { ok } = require('@/lib/response');
 const { withHandler } = require('@/lib/route-helpers');
 const { query } = require('@/lib/db');
-
-/**
- * POST /api/shipments/quote — price preview, nothing written.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * THIS IS THE FILE THROWING YOUR 400
- *
- * It was calling `quote()` from `@/lib/pricing-bands`, which refuses to price
- * anything unless `pricing_configs.use_distance_bands = TRUE` — a column that
- * doesn't exist in your schema. Hence:
- *
- *     "Distance-band pricing is not enabled. Run migration 009…"
- *
- * It now calls `quoteShipment` from `@/lib/pricing`, the same function shipment
- * creation uses. One pricing path means the preview and the charge can't
- * disagree.
- *
- * Safe to call on every map adjustment — no writes, no side effects.
- */
+const { BadRequestError } = require('@/lib/errors');
 
 exports.dynamic = 'force-dynamic';
 
+/**
+ * POST /api/shipments/quote
+ *
+ * Price preview only. It uses the same quoteShipment() function as shipment
+ * creation, so the preview and the final server-side charge cannot use two
+ * different pricing algorithms.
+ */
 exports.POST = withHandler(async (request) => {
-  const user = await requireAuth(request);
+  const user = await requireRole(request, ['customer']);
   const body = quoteShipmentSchema.parse(await readJson(request));
 
-  const quote = await quoteShipment({
-    pickup_lat: body.pickup_lat,
-    pickup_lng: body.pickup_lng,
-    delivery_lat: body.delivery_lat,
-    delivery_lng: body.delivery_lng,
-    pickup_city: body.pickup_city,
-    delivery_city: body.delivery_city,
-    discount_code: body.discount_code,
-  });
+  if (body.pickup_lat === body.delivery_lat && body.pickup_lng === body.delivery_lng) {
+    throw new BadRequestError('Pickup and delivery locations must be different.');
+  }
 
-  // Tell the app whether this customer pays now or gets invoiced, so the button
-  // can read "Place order" rather than "Pay 2,500 RWF" on a contract account.
+  const quote = await quoteShipment(body);
+
   const { rows: [customer] } = await query(
-    `SELECT customer_type, contract_customer FROM users WHERE id = $1`, [user.id]
+    `SELECT customer_type, contract_customer FROM users WHERE id=$1`,
+    [user.id],
   );
-  const isPremier = customer?.customer_type === 'premier' || customer?.contract_customer === true;
+  const isPremier =
+    customer?.customer_type === 'premier' || customer?.contract_customer === true;
 
   return ok({
     ...quote,
     payment_required: !isPremier,
-    // Riders' and Peleka's shares are in `quote` for the admin dashboard; the
-    // customer app should only ever display total_price.
   });
 });
