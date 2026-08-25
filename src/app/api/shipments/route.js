@@ -111,6 +111,16 @@ exports.POST = withHandler(async (request) => {
     discount_code: body.discount_code,
   });
 
+  // In production, do not silently turn a failed routing lookup into a cheap
+  // estimate. Set REQUIRE_ROUTED_DISTANCE=true so a billable shipment is only
+  // created when the server has a real road route. The preview endpoint can
+  // still display an estimate while the router is unavailable.
+  if (process.env.REQUIRE_ROUTED_DISTANCE === 'true' && quote.distance_source !== 'osrm') {
+    throw new BadRequestError(
+      'We could not verify the driving distance right now. Please try again in a moment.'
+    );
+  }
+
   const result = await withTransaction(async (client) => {
     const { rows: [customer] } = await client.query(
       `SELECT id, customer_type, contract_customer, credit_limit, outstanding_balance
