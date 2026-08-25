@@ -85,23 +85,71 @@ exports.POST = withHandler(async (request) => {
       rows: [s],
     } = await client.query(
       `INSERT INTO shipments (
-        customer_id, status,
-        sender_name, sender_phone,
-        recipient_name, recipient_phone,
-        pickup_address, pickup_city, pickup_lat, pickup_lng, pickup_notes, pickup_scheduled_at,
-        delivery_address, delivery_city, delivery_lat, delivery_lng, delivery_notes, delivery_scheduled_at,
-        parcel_description, parcel_category, parcel_weight_kg,
-        parcel_length_cm, parcel_width_cm, parcel_height_cm, parcel_declared_value, is_fragile,
-        pricing_config_id, distance_km, duration_minutes,
-        base_fare, distance_fee, weight_fee, time_fee, surge_multiplier,
-        discount_amount, discount_code, tax_amount, subtotal, total_price, currency,
-        rider_earnings, moto_earnings, platform_earnings,
-        rider_commission_percentage, moto_commission_percentage
-      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-        $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,
-        $39,$40,$41,$42,$43,$44,$45,$46,$47
-      ) RETURNING *`,
+         customer_id,
+ sender_name,
+ sender_phone,
+ recipient_name,
+ recipient_phone,
+
+ pickup_address,
+ pickup_city,
+ pickup_lat,
+ pickup_lng,
+ pickup_notes,
+
+ delivery_address,
+ delivery_city,
+ delivery_lat,
+ delivery_lng,
+ delivery_notes,
+
+ parcel_description,
+ parcel_category,
+ parcel_weight_kg,
+ parcel_length_cm,
+ parcel_width_cm,
+ parcel_height_cm,
+ parcel_declared_value,
+ is_fragile,
+
+ pricing_config_id,
+ distance_km,
+ duration_minutes,
+
+ base_fare,
+ distance_fee,
+ weight_fee,
+ time_fee,
+ surge_multiplier,
+
+ discount_amount,
+ discount_code,
+ tax_amount,
+ subtotal,
+ total_price,
+ currency,
+
+ rider_earnings,
+ moto_earnings,
+ platform_earnings,
+
+ rider_commission_percentage,
+ moto_commission_percentage
+
+)
+VALUES (
+ $1,$2,$3,$4,$5,
+ $6,$7,$8,$9,$10,
+ $11,$12,$13,$14,$15,
+ $16,$17,$18,$19,$20,
+ $21,$22,$23,
+ $24,$25,$26,
+ $27,$28,$29,$30,$31,
+ $32,$33,$34,$35,$36,$37,
+ $38,$39,$40,
+ $41,$42
+)
+RETURNING *,
       [
         customer_id,
         initialStatus,
