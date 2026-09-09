@@ -40,9 +40,25 @@ async function verifyGoogleIdToken(idToken) {
   };
 }
 
+function normalizeRwandaAddress(text) {
+  return String(text || "")
+    .normalize("NFKC")
+    .replace(/[–—]/g, "-")
+    .replace(/\b(st|str)\.?\b/gi, "street")
+    .replace(/\b(rd|rd\.)\b/gi, "road")
+    .replace(/\b(ave|av)\.?\b/gi, "avenue")
+    .replace(/\bkg\s*[-.]?\s*(\d+)/gi, "KG $1")
+    .replace(/\bkn\s*[-.]?\s*(\d+)/gi, "KN $1")
+    .replace(/\bkk\s*[-.]?\s*(\d+)/gi, "KK $1")
+    .replace(/\brn\s*[-.]?\s*(\d+)/gi, "RN $1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function openStreetMapSearch(text, { latitude, longitude, radiusMeters = 10000 } = {}) {
+  const normalized = normalizeRwandaAddress(text);
   const params = new URLSearchParams({
-    q: `${text}, Rwanda`,
+    q: `${normalized}, Kigali, Rwanda`,
     format: "jsonv2",
     addressdetails: "1",
     limit: "10",
@@ -67,8 +83,8 @@ async function openStreetMapSearch(text, { latitude, longitude, radiusMeters = 1
     const data = await res.json();
     return data.map((p) => ({
       place_id: String(p.place_id),
-      name: p.display_name?.split(",")?.slice(0, 2)?.join(",") || "",
-      address: p.display_name || "",
+      name: p.display_name?.split(",")?.slice(0, 2)?.join(",") || normalized,
+      address: p.display_name || normalized,
       city: p.address?.city || p.address?.town || p.address?.municipality || p.address?.district || "",
       district: p.address?.district || "",
       sector: p.address?.suburb || p.address?.quarter || "",
@@ -76,6 +92,10 @@ async function openStreetMapSearch(text, { latitude, longitude, radiusMeters = 1
       lng: Number(p.lon),
       types: p.type ? [p.type] : [],
       source: "external",
+      provider: "nominatim",
+      confidence: Number.isFinite(Number(p.importance)) ? Math.min(1, Math.max(0, Number(p.importance))) : null,
+      verification_required: true,
+      normalized_query: normalized,
     }));
   } finally {
     clearTimeout(timer);
@@ -102,10 +122,12 @@ async function openStreetMapReverse(latitude, longitude) {
       city: data.address?.city || data.address?.town || data.address?.municipality || data.address?.district || "",
       district: data.address?.district || "",
       sector: data.address?.suburb || data.address?.quarter || "",
+      source: "external",
+      provider: "nominatim",
     };
   } finally {
     clearTimeout(timer);
   }
 }
 
-module.exports = { verifyGoogleIdToken, openStreetMapSearch, openStreetMapReverse };
+module.exports = { verifyGoogleIdToken, openStreetMapSearch, openStreetMapReverse, normalizeRwandaAddress };
