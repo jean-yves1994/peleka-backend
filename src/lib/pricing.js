@@ -1,6 +1,6 @@
 const { query } = require("./db");
 const { NotFoundError, BadRequestError } = require("./errors");
-const { roadDistance } = require("./distance");
+const { roadDistance, haversine } = require("./distance");
 
 async function getActivePricingConfig() {
   const { rows } = await query(
@@ -9,6 +9,7 @@ async function getActivePricingConfig() {
   if (!rows[0]) throw new NotFoundError("No active pricing configuration");
   return rows[0];
 }
+
 async function findRouteOverride(pickupCity, deliveryCity) {
   if (!pickupCity || !deliveryCity) return null;
   const { rows } = await query(
@@ -20,6 +21,7 @@ async function findRouteOverride(pickupCity, deliveryCity) {
   );
   return rows[0] || null;
 }
+
 async function loadDiscount(code) {
   if (!code) return null;
   const { rows } = await query(
@@ -29,55 +31,31 @@ async function loadDiscount(code) {
   const d = rows[0];
   if (!d) throw new BadRequestError("Invalid discount code");
   const now = new Date();
-  if (d.valid_from && new Date(d.valid_from) > now)
-    throw new BadRequestError("Discount not yet valid");
-  if (d.valid_to && new Date(d.valid_to) < now)
-    throw new BadRequestError("Discount expired");
-  if (d.max_uses && d.used_count >= d.max_uses)
-    throw new BadRequestError("Discount usage limit reached");
+  if (d.valid_from && new Date(d.valid_from) > now) throw new BadRequestError("Discount not yet valid");
+  if (d.valid_to && new Date(d.valid_to) < now) throw new BadRequestError("Discount expired");
+  if (d.max_uses && d.used_count >= d.max_uses) throw new BadRequestError("Discount usage limit reached");
   return d;
 }
+
 function round2(n) {
   return Math.round(Number(n) * 100) / 100;
 }
+
 function computeDiscount(subtotal, discount) {
   if (!discount) return 0;
-  const raw =
-    discount.discount_type === "percent"
-      ? subtotal * (Number(discount.amount) / 100)
-      : Number(discount.amount);
+  const raw = discount.discount_type === "percent"
+    ? subtotal * (Number(discount.amount) / 100)
+    : Number(discount.amount);
   return Math.min(subtotal, Math.max(0, round2(raw)));
 }
 
-/**
- * Split the net fare three ways: rider, motorbike owner, Peleka.
- *
- * The base is `afterDiscount` — the PRE-TAX amount. VAT belongs to RRA and
- * isn't anyone's commission to share.
- *
- * Peleka takes the REMAINDER rather than its own rounded percentage. Three
- * independent roundings can otherwise miss the net by a franc, and payouts stop
- * reconciling against what was actually collected.
- *
- * Guarded so a bad config can't hand out more than came in: if the two
- * percentages exceed 100, the motorbike share is capped and Peleka lands at
- * zero rather than negative.
- */
 function splitEarnings(afterDiscount, config) {
   const riderPct = Math.max(0, Number(config.rider_commission_percentage) || 0);
-  const rawMotoPct = Math.max(
-    0,
-    Number(config.moto_commission_percentage) || 0,
-  );
-
+  const rawMotoPct = Math.max(0, Number(config.moto_commission_percentage) || 0);
   const motoPct = Math.min(rawMotoPct, Math.max(0, 100 - riderPct));
-
   const rider_earnings = round2(afterDiscount * (riderPct / 100));
   const moto_earnings = round2(afterDiscount * (motoPct / 100));
-  const platform_earnings = round2(
-    afterDiscount - rider_earnings - moto_earnings,
-  );
-
+  const platform_earnings = round2(afterDiscount - rider_earnings - moto_earnings);
   return {
     rider_earnings,
     moto_earnings,
@@ -87,31 +65,23 @@ function splitEarnings(afterDiscount, config) {
   };
 }
 
-/**
- * Quote a shipment.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * DISTANCE-ONLY PRICING
- *
- *     fare = base_fare + (billable_km × price_per_km)
- *
- * Parcel weight no longer affects the price. `weight_fee` is always 0 and
- * `config.price_per_kg` is deliberately never read — leaving the read in would
- * let a stale value on an old config quietly reappear in a fare.
- *
- * `weight_fee` is still returned, and still written to the shipment, because
- * the column is NOT NULL and existing receipts and dashboards read it. It just
- * always reads 0.00.
- *
- * `parcel_weight_kg` is still accepted and stored — useful for the rider to
- * know what they're carrying — it simply doesn't enter the calculation.
- *
- * ⚠️ `time_fee` is also not distance. It survives here because your config has
- *    `price_per_minute DEFAULT 0.00`, so it contributes nothing unless someone
- *    sets it. Say the word and I'll strip it out entirely.
- */
 async function quoteShipment(args) {
   const config = await getActivePricingConfig();
+
+  const straightLineKm = haversine(
+    args.pickup_lat,
+    args.pickup_lng,
+    args.delivery_lat,
+    args.delivery_lng,
+  );
+
+  // A courier trip whose endpoints are effectively the same is almost always
+  // a stale coordinate or an accidental selection. Reject it before pricing.
+  const sameLocationThresholdKm = Number(process.env.SAME_LOCATION_THRESHOLD_KM || 0.05);
+  if (straightLineKm <= sameLocationThresholdKm) {
+    throw new BadRequestError("Pickup and delivery locations must be different.");
+  }
+
   const route = await findRouteOverride(args.pickup_city, args.delivery_city);
   const discount = await loadDiscount(args.discount_code);
   const dmRaw = await roadDistance(
@@ -120,6 +90,13 @@ async function quoteShipment(args) {
     args.delivery_lat,
     args.delivery_lng,
   );
+
+  if (process.env.REQUIRE_ROUTED_DISTANCE === "true" && dmRaw.source !== "osrm") {
+    throw new BadRequestError(
+      "We could not verify the driving distance right now. Please try again in a moment.",
+    );
+  }
+
   const dm = {
     distance_km: dmRaw.km,
     duration_minutes: dmRaw.minutes,
@@ -127,13 +104,10 @@ async function quoteShipment(args) {
   };
 
   const currency = route?.currency || config.currency;
-  let base_fare = 0,
-    distance_fee = 0,
-    time_fee = 0,
-    subtotal = 0;
-
-  // Weight never affects the fare. Held at 0 so the NOT NULL column and any
-  // existing receipt layout still work.
+  let base_fare = 0;
+  let distance_fee = 0;
+  let time_fee = 0;
+  let subtotal = 0;
   const weight_fee = 0;
 
   if (route) {
@@ -142,25 +116,18 @@ async function quoteShipment(args) {
   } else {
     base_fare = round2(Number(config.base_fare));
     distance_fee = round2(dm.distance_km * Number(config.price_per_km));
-    time_fee = round2(
-      dm.duration_minutes * Number(config.price_per_minute || 0),
-    );
-
+    time_fee = round2(dm.duration_minutes * Number(config.price_per_minute || 0));
     let raw = base_fare + distance_fee + time_fee;
     raw *= Number(config.surge_multiplier || 1);
     if (raw < Number(config.min_price)) raw = Number(config.min_price);
-    if (config.max_price && raw > Number(config.max_price))
-      raw = Number(config.max_price);
+    if (config.max_price && raw > Number(config.max_price)) raw = Number(config.max_price);
     subtotal = round2(raw);
   }
 
   const discount_amount = computeDiscount(subtotal, discount);
   const afterDiscount = round2(subtotal - discount_amount);
-  const tax_amount = round2(
-    afterDiscount * (Number(config.tax_percentage) / 100),
-  );
+  const tax_amount = round2(afterDiscount * (Number(config.tax_percentage) / 100));
   const total_price = round2(afterDiscount + tax_amount);
-
   const earnings = splitEarnings(afterDiscount, config);
 
   return {
@@ -169,6 +136,7 @@ async function quoteShipment(args) {
     distance_km: dm.distance_km,
     duration_minutes: dm.duration_minutes,
     distance_source: dm.source,
+    straight_line_distance_km: round2(straightLineKm),
     surge_multiplier: Number(config.surge_multiplier),
     base_fare,
     distance_fee,
@@ -179,25 +147,13 @@ async function quoteShipment(args) {
     discount_amount,
     tax_amount,
     total_price,
-
     rider_earnings: earnings.rider_earnings,
     moto_earnings: earnings.moto_earnings,
     platform_earnings: earnings.platform_earnings,
-
-    // The rates actually applied, so the caller can freeze them onto the
-    // shipment. Changing the config later must not rewrite what a rider or a
-    // bike owner was already owed.
     rider_commission_percentage: earnings.rider_commission_percentage,
     moto_commission_percentage: earnings.moto_commission_percentage,
-
-    breakdown_note: route
-      ? "Flat route pricing applied"
-      : "Distance-based pricing",
+    breakdown_note: route ? "Flat route pricing applied" : "Distance-based pricing",
   };
 }
-module.exports = {
-  quoteShipment,
-  getActivePricingConfig,
-  loadDiscount,
-  splitEarnings,
-};
+
+module.exports = { quoteShipment, getActivePricingConfig, loadDiscount, splitEarnings };
