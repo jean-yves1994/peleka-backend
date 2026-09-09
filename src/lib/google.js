@@ -45,7 +45,7 @@ function normalizeRwandaAddress(text) {
     .normalize("NFKC")
     .replace(/[–—]/g, "-")
     .replace(/\b(st|str)\.?\b/gi, "street")
-    .replace(/\b(rd|rd\.)\b/gi, "road")
+    .replace(/\b(rd)\.?\b/gi, "road")
     .replace(/\b(ave|av)\.?\b/gi, "avenue")
     .replace(/\bkg\s*[-.]?\s*(\d+)/gi, "KG $1")
     .replace(/\bkn\s*[-.]?\s*(\d+)/gi, "KN $1")
@@ -58,7 +58,7 @@ function normalizeRwandaAddress(text) {
 async function openStreetMapSearch(text, { latitude, longitude, radiusMeters = 10000 } = {}) {
   const normalized = normalizeRwandaAddress(text);
   const params = new URLSearchParams({
-    q: `${normalized}, Kigali, Rwanda`,
+    q: `${normalized}, Rwanda`,
     format: "jsonv2",
     addressdetails: "1",
     limit: "10",
