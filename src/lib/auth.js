@@ -38,8 +38,6 @@ async function requireAuth(request) {
 async function requireRole(request, allowed) {
   const user = await requireAuth(request);
   const roles = Array.isArray(allowed) ? allowed : [allowed];
-  const effective = new Set(roles);
-  if (effective.has('dispatcher')) effective.add('admin');
   const effective = new Set();
   if (user.role === 'admin' || user.role === 'dispatcher') effective.add('admin');
   if (user.is_customer || user.role === 'customer') effective.add('customer');
