@@ -33,7 +33,7 @@ exports.dynamic = "force-dynamic";
 
 exports.POST = withHandler(async (request) => {
   const user = await requireAuth(request);
-  if (user.role !== "customer" && user.role !== "admin") {
+  if (!user.is_customer && user.role !== "customer" && user.role !== "admin") {
     throw new ForbiddenError("Only customers or admins can create shipments");
   }
   const body = createShipmentSchema.parse(await readJson(request));
@@ -253,11 +253,11 @@ exports.GET = withHandler(async (request) => {
   const filters = [];
   const params = [];
 
-  if (user.role === "customer") {
+  if (user.is_customer || user.role === "customer") {
     params.push(user.id);
     filters.push(`customer_id = $${params.length}`);
   }
-  if (user.role === "rider") {
+  if (user.is_rider || user.role === "rider") {
     params.push(user.id);
     filters.push(`rider_id = $${params.length}`);
   }
