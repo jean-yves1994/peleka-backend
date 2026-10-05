@@ -28,7 +28,10 @@ exports.POST = withHandler(async (request) => {
 
   const { rows } = await query(
     `SELECT id, email, phone, full_name, role, status, customer_type,
-              contract_customer, credit_limit, outstanding_balance, password_hash
+              contract_customer, credit_limit, outstanding_balance,
+              EXISTS (SELECT 1 FROM customer_profiles cp WHERE cp.user_id = users.id) AS is_customer,
+              EXISTS (SELECT 1 FROM rider_profiles rp WHERE rp.user_id = users.id) AS is_rider,
+              password_hash
        FROM users
       WHERE (($1::citext IS NOT NULL AND email = $1) OR ($2::text IS NOT NULL AND phone = $2))
         AND deleted_at IS NULL LIMIT 1`,
