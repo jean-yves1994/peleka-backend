@@ -141,12 +141,6 @@ exports.POST = async (request) => {
           [payment.shipment_id]
         );
         const premier = paidShipment?.customer_type === 'premier' || paidShipment?.contract_customer === true;
-        if (paidShipment?.is_guest) {
-          // Guest shipments have no user account, so there is no in-app user notification.
-          if (paidShipment.guest_email) {
-            try { await notify({ userId: null, title: 'Payment received', body: 'Your Peleka shipment payment was received.', data: { type: 'payment.paid', shipment_id: payment.shipment_id, email: paidShipment.guest_email } }); } catch (_) {}
-          }
-        }
         const message = premier && paidShipment?.status === 'delivered'
           ? 'Payment received. Your Premier account balance has been updated.'
           : 'Payment received. Your delivery is confirmed and will be assigned to a rider shortly.';

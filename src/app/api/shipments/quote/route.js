@@ -1,5 +1,4 @@
 const { readJson } = require('@/lib/middleware');
-const { requireAuth } = require('@/lib/auth');
 const { quoteShipmentSchema } = require('@/lib/validation');
 const { quoteShipment } = require('@/lib/pricing');
 const { ok } = require('@/lib/response');
@@ -28,7 +27,6 @@ const { query } = require('@/lib/db');
 exports.dynamic = 'force-dynamic';
 
 exports.POST = withHandler(async (request) => {
-  const user = await requireAuth(request);
   const body = quoteShipmentSchema.parse(await readJson(request));
 
   const quote = await quoteShipment({
@@ -43,10 +41,16 @@ exports.POST = withHandler(async (request) => {
 
   // Tell the app whether this customer pays now or gets invoiced, so the button
   // can read "Place order" rather than "Pay 2,500 RWF" on a contract account.
-  const { rows: [customer] } = await query(
-    `SELECT customer_type, contract_customer FROM users WHERE id = $1`, [user.id]
-  );
-  const isPremier = customer?.customer_type === 'premier' || customer?.contract_customer === true;
+  let isPremier = false;
+  const authorization = request.headers.get("authorization") || request.headers.get("Authorization");
+  if (authorization) {
+    try {
+      const { requireAuth } = require("@/lib/auth");
+      const user = await requireAuth(request);
+      const { rows: [customer] } = await query(`SELECT customer_type, contract_customer FROM users WHERE id = $1`, [user.id]);
+      isPremier = customer?.customer_type === "premier" || customer?.contract_customer === true;
+    } catch (_) {}
+  }
 
   return ok({
     ...quote,

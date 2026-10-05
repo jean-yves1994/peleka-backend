@@ -43,7 +43,7 @@ exports.POST = withHandler(async (request) => {
   const s = rows[0];
   if (!s) throw new NotFoundError('Shipment not found');
 
-  const guestAuthorized = Boolean(guestAccessToken) && s.is_guest === true && s.guest_token_hash === hashToken(guestAccessToken);
+  const guestAuthorized = Boolean(guestAccessToken) && s.is_guest === true && Boolean(s.guest_token_hash) && s.guest_token_hash === hashToken(guestAccessToken);
   const isOwner = !guestAccessToken && user?.role === 'customer' && s.customer_id === user.id;
   const isAdmin = !guestAccessToken && (user?.role === 'admin' || user?.role === 'dispatcher');
   if (!guestAuthorized && !isOwner && !isAdmin) throw new ForbiddenError();

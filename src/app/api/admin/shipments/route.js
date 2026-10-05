@@ -28,7 +28,7 @@ exports.GET = withHandler(async (request) => {
   const { rows } = await query(
     `SELECT s.*, cu.full_name AS customer_name, cu.phone AS customer_phone,
             ru.full_name AS rider_name, ru.phone AS rider_phone
-       FROM shipments s JOIN users cu ON cu.id=s.customer_id
+       FROM shipments s LEFT JOIN users cu ON cu.id=s.customer_id
   LEFT JOIN users ru ON ru.id=s.rider_id
        ${where} ORDER BY s.${orderBy} ${sortDir}
        LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`, listParams

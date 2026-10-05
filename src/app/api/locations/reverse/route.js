@@ -1,4 +1,3 @@
-const { requireAuth } = require("@/lib/auth");
 const { ok } = require("@/lib/response");
 const { BadRequestError } = require("@/lib/errors");
 const { withHandler } = require("@/lib/route-helpers");
@@ -16,8 +15,6 @@ exports.dynamic = "force-dynamic";
  * the final road-distance calculation.
  */
 exports.GET = withHandler(async (request) => {
-  await requireAuth(request);
-
   const url = new URL(request.url);
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
