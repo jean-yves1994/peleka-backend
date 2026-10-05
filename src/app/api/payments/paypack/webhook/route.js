@@ -77,12 +77,12 @@ exports.POST = async (request) => {
         await client.query(
           `UPDATE shipments SET status='awaiting_assignment'
             WHERE id=$1 AND status IN ('pending_payment','draft')
-              AND EXISTS (
+              AND (is_guest = TRUE OR EXISTS (
                 SELECT 1 FROM users cu
                  WHERE cu.id=shipments.customer_id
                    AND cu.customer_type <> 'premier'
                    AND cu.contract_customer = FALSE
-              )`,
+              ))`,
           [payment.shipment_id],
         );
         await client.query(
@@ -93,12 +93,12 @@ exports.POST = async (request) => {
              FROM shipments s
             WHERE s.id=$1
               AND s.status='awaiting_assignment'
-              AND EXISTS (
+              AND (s.is_guest = TRUE OR EXISTS (
                 SELECT 1 FROM users cu
                  WHERE cu.id=s.customer_id
                    AND cu.customer_type <> 'premier'
                    AND cu.contract_customer=FALSE
-              )`,
+              ))`,
           [payment.shipment_id],
         );
 
@@ -135,11 +135,18 @@ exports.POST = async (request) => {
 
       try {
         const { rows: [paidShipment] } = await query(
-          `SELECT s.status, u.customer_type, u.contract_customer
-             FROM shipments s JOIN users u ON u.id=s.customer_id WHERE s.id=$1`,
+          `SELECT s.status, s.is_guest, s.guest_name, s.guest_email,
+                  u.customer_type, u.contract_customer
+             FROM shipments s LEFT JOIN users u ON u.id=s.customer_id WHERE s.id=$1`,
           [payment.shipment_id]
         );
         const premier = paidShipment?.customer_type === 'premier' || paidShipment?.contract_customer === true;
+        if (paidShipment?.is_guest) {
+          // Guest shipments have no user account, so there is no in-app user notification.
+          if (paidShipment.guest_email) {
+            try { await notify({ userId: null, title: 'Payment received', body: 'Your Peleka shipment payment was received.', data: { type: 'payment.paid', shipment_id: payment.shipment_id, email: paidShipment.guest_email } }); } catch (_) {}
+          }
+        }
         const message = premier && paidShipment?.status === 'delivered'
           ? 'Payment received. Your Premier account balance has been updated.'
           : 'Payment received. Your delivery is confirmed and will be assigned to a rider shortly.';
