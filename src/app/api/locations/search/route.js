@@ -1,4 +1,3 @@
-const { requireAuth } = require("@/lib/auth");
 const { ok } = require("@/lib/response");
 const { BadRequestError } = require("@/lib/errors");
 const { withHandler } = require("@/lib/route-helpers");
@@ -25,7 +24,6 @@ function normalizeSearch(text) {
  * the customer has explicitly confirmed, preferably with a map pin.
  */
 exports.GET = withHandler(async (request) => {
-  await requireAuth(request);
   const url = new URL(request.url);
   const rawQuery = String(url.searchParams.get("q") || "").trim();
   const q = normalizeSearch(rawQuery);
