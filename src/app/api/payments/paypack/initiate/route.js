@@ -10,6 +10,7 @@
  */
 const crypto = require('crypto');
 const { query } = require('@/lib/db');
+const { hashToken } = require('@/lib/jwt');
 const { readJson } = require('@/lib/middleware');
 const { requireAuth } = require('@/lib/auth');
 const { cashin, normalizePhone } = require('@/lib/paypack');
@@ -23,8 +24,9 @@ const { logAudit } = require('@/lib/audit');
 exports.dynamic = 'force-dynamic';
 
 exports.POST = withHandler(async (request) => {
-  const user = await requireAuth(request);
   const body = await readJson(request);
+  const guestAccessToken = String(body?.guest_access_token || '').trim();
+  const user = guestAccessToken ? null : await requireAuth(request);
   const shipmentId = body?.shipment_id;
   if (!shipmentId) throw new BadRequestError('shipment_id is required');
 
@@ -33,16 +35,18 @@ exports.POST = withHandler(async (request) => {
             cu.full_name AS customer_name, cu.customer_type, cu.contract_customer,
             cu.outstanding_balance
        FROM shipments s
-       JOIN users cu ON cu.id = s.customer_id
+       LEFT JOIN users cu ON cu.id = s.customer_id
+       LEFT JOIN guest_shipment_access gsa ON gsa.shipment_id = s.id
       WHERE s.id = $1`,
     [shipmentId],
   );
   const s = rows[0];
   if (!s) throw new NotFoundError('Shipment not found');
 
-  const isOwner = user.role === 'customer' && s.customer_id === user.id;
-  const isAdmin = user.role === 'admin' || user.role === 'dispatcher';
-  if (!isOwner && !isAdmin) throw new ForbiddenError();
+  const guestAuthorized = Boolean(guestAccessToken) && s.is_guest === true && s.guest_token_hash === hashToken(guestAccessToken);
+  const isOwner = !guestAccessToken && user?.role === 'customer' && s.customer_id === user.id;
+  const isAdmin = !guestAccessToken && (user?.role === 'admin' || user?.role === 'dispatcher');
+  if (!guestAuthorized && !isOwner && !isAdmin) throw new ForbiddenError();
 
   if (s.status === 'cancelled') throw new ConflictError('Shipment is cancelled');
 
@@ -64,7 +68,7 @@ exports.POST = withHandler(async (request) => {
 
   // Pay with the phone supplied in the request, else the account's phone.
   // normalizePhone throws a friendly 400 if it isn't a valid Rwandan MSISDN.
-  const phone = normalizePhone(body?.phone || s.customer_phone);
+  const phone = normalizePhone(body?.phone || (s.is_guest ? s.guest_phone : s.customer_phone));
 
   // Reuse a pending payment row if one exists; otherwise create it.
   let payment = (await query(
@@ -80,7 +84,7 @@ exports.POST = withHandler(async (request) => {
          (shipment_id, customer_id, amount, currency, method, status, provider)
        VALUES ($1,$2,$3,$4,'mobile_money','pending','paypack')
        RETURNING *`,
-      [shipmentId, s.customer_id, s.total_price, s.currency || 'RWF'],
+      [shipmentId, s.customer_id || null, s.total_price, s.currency || 'RWF'],
     )).rows[0];
   }
 
@@ -114,7 +118,7 @@ exports.POST = withHandler(async (request) => {
 
   await logAudit({
     request,
-    actor: user,
+    actor: user || { id: null },
     action: 'payment.paypack.initiated',
     entityType: 'payment',
     entityId: payment.id,
