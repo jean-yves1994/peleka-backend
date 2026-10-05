@@ -16,13 +16,13 @@ function guestToken(request) {
 }
 
 exports.GET = withHandler(async (request, { params }) => {
-  rateLimit(\`guest-shipment:\${getClientIp(request) || 'unknown'}\`, { max: 60, windowMs: 60_000 });
+  rateLimit(`guest-shipment:\${getClientIp(request) || 'unknown'}`, { max: 60, windowMs: 60_000 });
   const token = guestToken(request);
   if (!token) throw new BadRequestError('Guest access token is required');
 
   const tokenHash = hashToken(token);
   const { rows } = await query(
-    \`SELECT s.id, s.tracking_number, s.status, s.is_guest,
+    `SELECT s.id, s.tracking_number, s.status, s.is_guest,
             s.guest_name, s.guest_phone, s.guest_email,
             s.sender_name, s.sender_phone, s.recipient_name, s.recipient_phone,
             s.pickup_address, s.pickup_city, s.pickup_lat, s.pickup_lng,
@@ -36,15 +36,15 @@ exports.GET = withHandler(async (request, { params }) => {
             (SELECT p.id FROM payments p WHERE p.shipment_id=s.id ORDER BY p.created_at DESC LIMIT 1) AS payment_id
        FROM shipments s
        JOIN guest_shipment_access gsa ON gsa.shipment_id=s.id
-      WHERE s.id=$1 AND s.is_guest=TRUE AND gsa.token_hash=$2\`,
+      WHERE s.id=$1 AND s.is_guest=TRUE AND gsa.token_hash=$2`,
     [params.id, tokenHash]
   );
   const s = rows[0];
   if (!s) throw new NotFoundError('Guest shipment not found');
 
   const { rows: timeline } = await query(
-    \`SELECT to_status::text AS status, note, created_at
-       FROM shipment_status_history WHERE shipment_id=$1 ORDER BY created_at ASC\`,
+    `SELECT to_status::text AS status, note, created_at
+       FROM shipment_status_history WHERE shipment_id=$1 ORDER BY created_at ASC`,
     [s.id]
   );
 
