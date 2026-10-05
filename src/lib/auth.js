@@ -22,7 +22,9 @@ async function requireAuth(request) {
   if (payload.typ !== 'access') throw new UnauthorizedError('Wrong token type');
   const { rows } = await query(
     `SELECT id, email, phone, full_name, role, status, avatar_url, created_at,
-              customer_type, contract_customer, credit_limit, outstanding_balance
+              customer_type, contract_customer, credit_limit, outstanding_balance,
+            EXISTS (SELECT 1 FROM customer_profiles cp WHERE cp.user_id = users.id) AS is_customer,
+            EXISTS (SELECT 1 FROM rider_profiles rp WHERE rp.user_id = users.id) AS is_rider
        FROM users WHERE id = $1 AND deleted_at IS NULL`,
     [payload.sub]
   );
@@ -38,7 +40,17 @@ async function requireRole(request, allowed) {
   const roles = Array.isArray(allowed) ? allowed : [allowed];
   const effective = new Set(roles);
   if (effective.has('dispatcher')) effective.add('admin');
-  if (!effective.has(user.role)) throw new ForbiddenError(`Requires one of roles: ${roles.join(', ')}`);
+  const effective = new Set();
+  if (user.role === 'admin' || user.role === 'dispatcher') effective.add('admin');
+  if (user.is_customer || user.role === 'customer') effective.add('customer');
+  if (user.is_rider || user.role === 'rider') effective.add('rider');
+  if (effective.has('dispatcher')) effective.add('admin');
+  const requested = new Set(roles);
+  if (requested.has('dispatcher')) requested.add('admin');
+  for (const role of requested) {
+    if (effective.has(role)) return user;
+  }
+  throw new ForbiddenError(`Requires one of roles: ${roles.join(', ')}`);
   return user;
 }
 
