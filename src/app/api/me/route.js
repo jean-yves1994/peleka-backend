@@ -11,10 +11,10 @@ exports.dynamic = 'force-dynamic';
 exports.GET = withHandler(async (request) => {
   const user = await requireAuth(request);
   let profile = null;
-  if (user.role === 'customer') {
+  if (user.is_customer || user.role === 'customer') {
     const { rows } = await query(`SELECT * FROM customer_profiles WHERE user_id=$1`, [user.id]);
     profile = rows[0] || null;
-  } else if (user.role === 'rider') {
+  } if (user.is_rider || user.role === 'rider') {
     const { rows } = await query(`SELECT * FROM rider_profiles WHERE user_id=$1`, [user.id]);
     profile = rows[0] || null;
   }
@@ -34,7 +34,7 @@ exports.PATCH = withHandler(async (request) => {
     const set = keys.map((k, i) => `${k}=$${i + 1}`).join(', ');
     await query(`UPDATE users SET ${set} WHERE id=$${keys.length + 1}`, [...vals, user.id]);
   }
-  if (user.role === 'customer' &&
+  if ((user.is_customer || user.role === 'customer') &&
       (body.default_address !== undefined || body.default_lat !== undefined || body.default_lng !== undefined)) {
     await query(
       `UPDATE customer_profiles
