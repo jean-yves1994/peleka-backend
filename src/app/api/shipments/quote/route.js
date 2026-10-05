@@ -1,4 +1,4 @@
-const { readJson } = require('@/lib/middleware');
+const { readJson, getClientIp, rateLimit } = require('@/lib/middleware');
 const { quoteShipmentSchema } = require('@/lib/validation');
 const { quoteShipment } = require('@/lib/pricing');
 const { ok } = require('@/lib/response');
@@ -27,6 +27,7 @@ const { query } = require('@/lib/db');
 exports.dynamic = 'force-dynamic';
 
 exports.POST = withHandler(async (request) => {
+  rateLimit(`shipment-quote:${getClientIp(request) || "unknown"}`, { windowMs: 60_000, max: 60 });
   const body = quoteShipmentSchema.parse(await readJson(request));
 
   const quote = await quoteShipment({

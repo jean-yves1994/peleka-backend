@@ -2,6 +2,7 @@ const { ok } = require("@/lib/response");
 const { BadRequestError } = require("@/lib/errors");
 const { withHandler } = require("@/lib/route-helpers");
 const { query } = require("@/lib/db");
+const { getClientIp, rateLimit } = require("@/lib/middleware");
 const { openStreetMapSearch } = require("@/lib/google");
 
 exports.dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ function normalizeSearch(text) {
  * the customer has explicitly confirmed, preferably with a map pin.
  */
 exports.GET = withHandler(async (request) => {
+  rateLimit(`location-search:${getClientIp(request) || "unknown"}`, { windowMs: 60_000, max: 60 });
   const url = new URL(request.url);
   const rawQuery = String(url.searchParams.get("q") || "").trim();
   const q = normalizeSearch(rawQuery);

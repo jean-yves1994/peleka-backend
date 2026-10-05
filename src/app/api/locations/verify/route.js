@@ -1,4 +1,4 @@
-const { requireAuth } = require("@/lib/auth");
+const { getClientIp, rateLimit } = require("@/lib/middleware");
 const { ok } = require("@/lib/response");
 const { BadRequestError } = require("@/lib/errors");
 const { withHandler } = require("@/lib/route-helpers");
@@ -13,7 +13,7 @@ function finiteCoordinate(value, min, max) {
 }
 
 exports.POST = withHandler(async (request) => {
-  const user = await requireAuth(request);
+  rateLimit(`location-verify:${getClientIp(request) || "unknown"}`, { windowMs: 60_000, max: 30 });
   const body = await request.json().catch(() => ({}));
   const lat = Number(body.lat);
   const lng = Number(body.lng);
@@ -84,6 +84,5 @@ exports.POST = withHandler(async (request) => {
           distance_km: knownDistance,
         }
       : null,
-    user_id: user?.id ?? user?.user_id ?? null,
   });
 });

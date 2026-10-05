@@ -2,6 +2,7 @@ const { ok } = require("@/lib/response");
 const { BadRequestError } = require("@/lib/errors");
 const { withHandler } = require("@/lib/route-helpers");
 const { query } = require("@/lib/db");
+const { getClientIp, rateLimit } = require("@/lib/middleware");
 const { openStreetMapReverse } = require("@/lib/google");
 
 exports.dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ exports.dynamic = "force-dynamic";
  * the final road-distance calculation.
  */
 exports.GET = withHandler(async (request) => {
+  rateLimit(`location-reverse:${getClientIp(request) || "unknown"}`, { windowMs: 60_000, max: 30 });
   const url = new URL(request.url);
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
