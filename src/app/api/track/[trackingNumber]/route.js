@@ -10,7 +10,7 @@ exports.GET = withHandler(async (request, { params }) => {
   const url = new URL(request.url);
   const guestAccessToken = String(url.searchParams.get('guest_access_token') || '').trim();
   const { rows } = await query(
-    `SELECT id, tracking_number, status, pickup_city, delivery_city,
+    `SELECT id, tracking_number, status, is_guest, pickup_city, delivery_city,
             split_part(recipient_name, ' ', 1) AS recipient_first_name,
             picked_up_at, delivered_at, created_at
        FROM shipments WHERE tracking_number=$1`, [params.trackingNumber]
