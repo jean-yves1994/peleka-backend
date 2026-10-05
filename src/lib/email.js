@@ -1,7 +1,7 @@
 const RESEND_API_URL = 'https://api.resend.com/emails';
 
 function resetUrl(token) {
-  const template = process.env.PASSWORD_RESET_URL || 'peleka://reset-password?token={{token}}';
+  const template = process.env.PASSWORD_RESET_URL || 'https://www.pelekaapp.com/reset-password?token={{token}}';
   return template.replace('{{token}}', encodeURIComponent(token));
 }
 
