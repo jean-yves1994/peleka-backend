@@ -33,7 +33,8 @@ exports.POST = withHandler(async (request) => {
   const { rows } = await query(
     `SELECT s.*, cu.email AS customer_email, cu.phone AS customer_phone,
             cu.full_name AS customer_name, cu.customer_type, cu.contract_customer,
-            cu.outstanding_balance
+            cu.outstanding_balance,
+            gsa.token_hash AS guest_access_token_hash
        FROM shipments s
        LEFT JOIN users cu ON cu.id = s.customer_id
        LEFT JOIN guest_shipment_access gsa ON gsa.shipment_id = s.id
@@ -43,7 +44,7 @@ exports.POST = withHandler(async (request) => {
   const s = rows[0];
   if (!s) throw new NotFoundError('Shipment not found');
 
-  const guestAuthorized = Boolean(guestAccessToken) && s.is_guest === true && Boolean(s.guest_token_hash) && s.guest_token_hash === hashToken(guestAccessToken);
+  const guestAuthorized = Boolean(guestAccessToken) && s.is_guest === true && Boolean(s.guest_access_token_hash) && s.guest_access_token_hash === hashToken(guestAccessToken);
   const isOwner = !guestAccessToken && user?.role === 'customer' && s.customer_id === user.id;
   const isAdmin = !guestAccessToken && (user?.role === 'admin' || user?.role === 'dispatcher');
   if (!guestAuthorized && !isOwner && !isAdmin) throw new ForbiddenError();
